@@ -35,11 +35,55 @@ def main() -> None:
             background: transparent;
         }
         .block-container {
-            padding-top: 2.5rem;
+            padding-top: 1.25rem;
             max-width: 1280px;
         }
         h1, p, span, label {
             color: #17202f;
+        }
+        h1 {
+            font-size: 1.55rem !important;
+            margin-bottom: 0.1rem !important;
+        }
+        [data-testid="stCaptionContainer"] {
+            font-size: 0.72rem;
+        }
+        [data-testid="stExpander"] details {
+            border-radius: 5px;
+        }
+        [data-testid="stPopover"] button,
+        div.stButton > button,
+        button[data-testid="stBaseButton-secondary"],
+        button[data-testid="stBaseButton-tertiary"],
+        div[data-baseweb="select"] > div,
+        [data-testid="stNumberInput"] input,
+        [data-testid="stTextInput"] input {
+            min-height: 1.65rem;
+            font-size: 0.78rem;
+        }
+        div.stButton > button,
+        [data-testid="stPopover"] button,
+        button[data-testid="stBaseButton-secondary"],
+        button[data-testid="stBaseButton-tertiary"],
+        a[data-testid="stLinkButton"] {
+            background: #ffffff !important;
+            color: #17202f !important;
+            border: 1px solid #b7c0ce !important;
+            padding: 0.18rem 0.45rem;
+            border-radius: 4px;
+        }
+        div.stButton > button:hover,
+        [data-testid="stPopover"] button:hover,
+        button[data-testid="stBaseButton-secondary"]:hover,
+        button[data-testid="stBaseButton-tertiary"]:hover {
+            border-color: #256f8f !important;
+            color: #256f8f !important;
+        }
+        [data-testid="column"] {
+            gap: 0.35rem;
+        }
+        [data-testid="stMarkdownContainer"] p {
+            margin-bottom: 0.15rem;
         }
         </style>
         """,
@@ -203,6 +247,12 @@ def _render_browser(records: list[PlotRecord]) -> str:
               border-bottom: 1px solid var(--line);
             }}
             .card-body {{ padding: 8px 9px 9px; }}
+            .card-head {{
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) auto;
+              gap: 8px;
+              align-items: center;
+            }}
             .name {{
               font-weight: 650;
               overflow: hidden;
@@ -225,12 +275,29 @@ def _render_browser(records: list[PlotRecord]) -> str:
             .badge.good {{ color: var(--good); border-color: #9cc9b4; }}
             .badge.warn {{ color: var(--warn); border-color: #d8b56f; }}
             .badge.bad {{ color: var(--bad); border-color: #d8a3a3; }}
-            details {{
+            details.card-menu {{
               margin-top: 7px;
               color: var(--muted);
               font-size: 12px;
             }}
-            summary {{ cursor: pointer; }}
+            details.card-menu summary {{
+              cursor: pointer;
+              display: inline-flex;
+              align-items: center;
+              border: 1px solid var(--line);
+              border-radius: 3px;
+              padding: 2px 5px;
+              color: var(--muted);
+              font-size: 11px;
+              user-select: none;
+            }}
+            .menu-panel {{
+              margin-top: 6px;
+              border: 1px solid var(--line);
+              border-radius: 4px;
+              padding: 7px;
+              background: #fbfcfd;
+            }}
             code {{
               display: block;
               white-space: pre-wrap;
@@ -397,15 +464,12 @@ def _render_browser(records: list[PlotRecord]) -> str:
               const body = document.createElement("div");
               body.className = "card-body";
               body.innerHTML = `
-                <div class="name" title="${{escapeHtml(record.image_path)}}">${{escapeHtml(record.name)}}</div>
-                <div class="meta">
-                  <span class="badge">${{record.kind}}</span>
-                  <span class="badge ${{record.csv_path ? "good" : "bad"}}">${{record.csv_path ? "CSV matched" : "CSV missing"}}</span>
-                  <span class="badge ${{record.confidence === "high" || record.confidence === "exact" ? "good" : "warn"}}">${{record.confidence}}</span>
-                </div>
-                <details>
-                  <summary>details</summary>
-                  <code>image: ${{escapeHtml(record.image_path)}}
+                <div class="card-head">
+                  <div class="name" title="${{escapeHtml(record.image_path)}}">${{escapeHtml(record.name)}}</div>
+                  <details class="card-menu">
+                    <summary>menu</summary>
+                    <div class="menu-panel">
+                      <code>image: ${{escapeHtml(record.image_path)}}
 plot csv: ${{escapeHtml(record.csv_path || "unmatched")}}
 raw csv: ${{escapeHtml(record.raw_csv_path || "not configured")}}
 cache: ${{escapeHtml(record.cache_path || "not rendered")}}
@@ -413,7 +477,14 @@ render error: ${{escapeHtml(record.render_error || "none")}}
 reason: ${{escapeHtml(record.reason || "")}}
 preview:
 ${{escapeHtml(record.csv_preview || "No CSV preview")}}</code>
-                </details>
+                    </div>
+                  </details>
+                </div>
+                <div class="meta">
+                  <span class="badge">${{record.kind}}</span>
+                  <span class="badge ${{record.csv_path ? "good" : "bad"}}">${{record.csv_path ? "CSV matched" : "CSV missing"}}</span>
+                  <span class="badge ${{record.confidence === "high" || record.confidence === "exact" ? "good" : "warn"}}">${{record.confidence}}</span>
+                </div>
               `;
               card.append(image, body);
               return card;
@@ -485,6 +556,7 @@ def _record_payload(record: PlotRecord) -> dict[str, object]:
         else None,
         "render_error": render_error,
         "csv_preview": csv_preview,
+        "editable": bool(record.redraw and (record.plot_csv or record.csv)),
     }
 
 
@@ -527,108 +599,205 @@ def _render_metadata_editor(
     manifest: ProjectManifest,
 ) -> None:
     editable_records = [record for record in records if record.redraw and (record.plot_csv or record.csv)]
-    with st.expander("Edit metadata", expanded=bool(editable_records)):
-        if not editable_records:
-            st.info("Static or unconfigured plots are view-only until manifest metadata is added.")
-            return
+    if not editable_records:
+        return
 
+    with st.expander("Plot look drawer", expanded=False):
         selected_id = st.selectbox(
             "Plot",
             [record.plot_id for record in editable_records],
             format_func=lambda plot_id: _plot_label(editable_records, plot_id),
+            label_visibility="collapsed",
         )
         selected = next(record for record in editable_records if record.plot_id == selected_id)
-        source_csv = selected.plot_csv or selected.csv
-        assert source_csv is not None
-        redraw = selected.redraw or RedrawMetadata()
-        manifest_record = manifest.record_for_plot(selected.image.relative_path)
+        _render_selected_plot_editor(project_root, selected, manifest)
+
+
+def _render_selected_plot_editor(
+    project_root: Path,
+    selected: PlotRecord,
+    manifest: ProjectManifest,
+) -> None:
+    source_csv = selected.plot_csv or selected.csv
+    assert source_csv is not None
+    redraw = selected.redraw or RedrawMetadata()
+    manifest_record = manifest.record_for_plot(selected.image.relative_path)
+
+    preview_col, controls_col = st.columns([1.15, 1], gap="small")
+    with preview_col:
+        st.image(
+            selected.cache.cache_path if selected.cache and selected.cache.cache_path else selected.image.path,
+            caption=selected.image.relative_path.as_posix(),
+            width="stretch",
+        )
+    with controls_col:
+        st.caption("Plot look")
+        st.markdown(f"**{selected.image.relative_path.name}**")
         if manifest_record and manifest_record.raw_csv_path:
-            st.caption(f"Raw CSV (provenance only): {manifest_record.raw_csv_path.as_posix()}")
-        st.caption(f"Render source: {source_csv.relative_path.as_posix()}")
+            st.caption(f"raw: {manifest_record.raw_csv_path.as_posix()}")
+        st.caption(f"render: {source_csv.relative_path.as_posix()}")
 
-        inferred_series = _series_for_editor(selected)
-        with st.form(f"metadata_editor_{selected.plot_id}"):
-            left, right = st.columns(2)
-            with left:
-                title = st.text_input("Title", value=redraw.title or "")
-                xlabel = st.text_input("X label", value=redraw.xlabel or "")
-                ylabel = st.text_input("Y label", value=redraw.ylabel or "")
-                xscale = st.selectbox(
-                    "X scale",
-                    ["linear", "log", "symlog", "logit"],
-                    index=_scale_index(redraw.xscale),
-                )
-                yscale = st.selectbox(
-                    "Y scale",
-                    ["linear", "log", "symlog", "logit"],
-                    index=_scale_index(redraw.yscale),
-                )
-                xlim = st.text_input("X limits", value=_limits_text(redraw.xlim), placeholder="min,max")
-                ylim = st.text_input("Y limits", value=_limits_text(redraw.ylim), placeholder="min,max")
-            with right:
-                grid = st.checkbox("Grid", value=redraw.grid)
-                width_inches = st.number_input(
-                    "Figure width (in)",
-                    min_value=1.0,
-                    max_value=24.0,
-                    value=float(redraw.figure.width_inches),
-                    step=0.25,
-                )
-                height_inches = st.number_input(
-                    "Figure height (in)",
-                    min_value=1.0,
-                    max_value=24.0,
-                    value=float(redraw.figure.height_inches),
-                    step=0.25,
-                )
-                dpi = st.number_input(
-                    "DPI",
-                    min_value=50,
-                    max_value=600,
-                    value=int(redraw.figure.dpi),
-                    step=10,
-                )
+        axis_values = _render_axis_popover(selected, redraw)
+        figure_values = _render_figure_popover(selected, redraw)
+        edited_series = _render_series_popover(selected, _series_for_editor(selected))
+        if st.button("Save", key=f"{selected.plot_id}_save"):
+            _save_selected_plot_metadata(
+                project_root,
+                selected,
+                redraw,
+                axis_values,
+                figure_values,
+                edited_series,
+            )
 
-            st.markdown("**Series styles**")
-            edited_series: list[SeriesStyle] = []
-            for index, style in enumerate(inferred_series):
-                cols = st.columns([1.3, 1.3, 1, 1, 1, 1])
-                y_column = cols[0].text_input("Y column", value=style.y, key=f"{selected.plot_id}_{index}_y")
-                label = cols[1].text_input(
+
+def _save_selected_plot_metadata(
+    project_root: Path,
+    selected: PlotRecord,
+    redraw: RedrawMetadata,
+    axis_values: dict[str, str],
+    figure_values: dict[str, object],
+    edited_series: list[SeriesStyle],
+) -> None:
+    try:
+        updated_redraw = RedrawMetadata(
+            kind=redraw.kind,
+            x=redraw.x,
+            title=axis_values["title"] or None,
+            xlabel=axis_values["xlabel"] or None,
+            ylabel=axis_values["ylabel"] or None,
+            xscale=axis_values["xscale"],
+            yscale=axis_values["yscale"],
+            xlim=_parse_limits(axis_values["xlim"]),
+            ylim=_parse_limits(axis_values["ylim"]),
+            grid=bool(figure_values["grid"]),
+            figure={
+                "width_inches": figure_values["width_inches"],
+                "height_inches": figure_values["height_inches"],
+                "dpi": figure_values["dpi"],
+            },
+            series=edited_series,
+        )
+        update_manifest_redraw(project_root, selected.image.relative_path, updated_redraw)
+    except ValueError as exc:
+        st.error(str(exc))
+    else:
+        st.toast("Plot metadata saved.")
+        st.rerun()
+
+
+def _render_axis_popover(record: PlotRecord, redraw: RedrawMetadata) -> dict[str, str]:
+    with st.popover("Axes"):
+        title = st.text_input("Title", value=redraw.title or "", key=f"{record.plot_id}_title")
+        xlabel = st.text_input("X label", value=redraw.xlabel or "", key=f"{record.plot_id}_xlabel")
+        ylabel = st.text_input("Y label", value=redraw.ylabel or "", key=f"{record.plot_id}_ylabel")
+        xscale = st.selectbox(
+            "X scale",
+            ["linear", "log", "symlog", "logit"],
+            index=_scale_index(redraw.xscale),
+            key=f"{record.plot_id}_xscale",
+        )
+        yscale = st.selectbox(
+            "Y scale",
+            ["linear", "log", "symlog", "logit"],
+            index=_scale_index(redraw.yscale),
+            key=f"{record.plot_id}_yscale",
+        )
+        xlim = st.text_input(
+            "X limits",
+            value=_limits_text(redraw.xlim),
+            placeholder="min,max",
+            key=f"{record.plot_id}_xlim",
+        )
+        ylim = st.text_input(
+            "Y limits",
+            value=_limits_text(redraw.ylim),
+            placeholder="min,max",
+            key=f"{record.plot_id}_ylim",
+        )
+    return {
+        "title": title,
+        "xlabel": xlabel,
+        "ylabel": ylabel,
+        "xscale": xscale,
+        "yscale": yscale,
+        "xlim": xlim,
+        "ylim": ylim,
+    }
+
+
+def _render_figure_popover(record: PlotRecord, redraw: RedrawMetadata) -> dict[str, object]:
+    with st.popover("Figure"):
+        grid = st.checkbox("Grid", value=redraw.grid, key=f"{record.plot_id}_grid")
+        width_inches = st.number_input(
+            "Width",
+            min_value=1.0,
+            max_value=24.0,
+            value=float(redraw.figure.width_inches),
+            step=0.25,
+            key=f"{record.plot_id}_width",
+        )
+        height_inches = st.number_input(
+            "Height",
+            min_value=1.0,
+            max_value=24.0,
+            value=float(redraw.figure.height_inches),
+            step=0.25,
+            key=f"{record.plot_id}_height",
+        )
+        dpi = st.number_input(
+            "DPI",
+            min_value=50,
+            max_value=600,
+            value=int(redraw.figure.dpi),
+            step=10,
+            key=f"{record.plot_id}_dpi",
+        )
+    return {"grid": grid, "width_inches": width_inches, "height_inches": height_inches, "dpi": dpi}
+
+
+def _render_series_popover(record: PlotRecord, series: list[SeriesStyle]) -> list[SeriesStyle]:
+    edited_series: list[SeriesStyle] = []
+    with st.popover("Series"):
+        for index, style in enumerate(series):
+            with st.expander(style.label or style.y, expanded=index == 0):
+                y_column = st.text_input("Y", value=style.y, key=f"{record.plot_id}_{index}_y")
+                label = st.text_input(
                     "Label",
                     value=style.label or "",
-                    key=f"{selected.plot_id}_{index}_label",
+                    key=f"{record.plot_id}_{index}_label",
                 )
-                color = cols[2].text_input(
+                color = st.text_input(
                     "Color",
                     value=style.color or "",
-                    key=f"{selected.plot_id}_{index}_color",
+                    key=f"{record.plot_id}_{index}_color",
                 )
-                linewidth = cols[3].number_input(
+                cols = st.columns(3)
+                linewidth = cols[0].number_input(
                     "Width",
                     min_value=0.1,
                     max_value=20.0,
                     value=float(style.linewidth or 1.5),
                     step=0.1,
-                    key=f"{selected.plot_id}_{index}_linewidth",
+                    key=f"{record.plot_id}_{index}_linewidth",
                 )
-                linestyle = cols[4].text_input(
+                linestyle = cols[1].text_input(
                     "Line",
                     value=style.linestyle or "-",
-                    key=f"{selected.plot_id}_{index}_linestyle",
+                    key=f"{record.plot_id}_{index}_linestyle",
                 )
-                marker = cols[5].text_input(
+                marker = cols[2].text_input(
                     "Marker",
                     value=style.marker if style.marker is not None else "o",
-                    key=f"{selected.plot_id}_{index}_marker",
+                    key=f"{record.plot_id}_{index}_marker",
                 )
                 alpha = st.slider(
-                    f"Alpha for {y_column}",
+                    "Alpha",
                     min_value=0.0,
                     max_value=1.0,
                     value=float(style.alpha if style.alpha is not None else 1.0),
                     step=0.05,
-                    key=f"{selected.plot_id}_{index}_alpha",
+                    key=f"{record.plot_id}_{index}_alpha",
                 )
                 if y_column:
                     edited_series.append(
@@ -642,34 +811,7 @@ def _render_metadata_editor(
                             alpha=alpha,
                         )
                     )
-
-            submitted = st.form_submit_button("Save metadata and render cached preview")
-            if submitted:
-                try:
-                    updated_redraw = RedrawMetadata(
-                        kind=redraw.kind,
-                        x=redraw.x,
-                        title=title or None,
-                        xlabel=xlabel or None,
-                        ylabel=ylabel or None,
-                        xscale=xscale,
-                        yscale=yscale,
-                        xlim=_parse_limits(xlim),
-                        ylim=_parse_limits(ylim),
-                        grid=grid,
-                        figure={
-                            "width_inches": width_inches,
-                            "height_inches": height_inches,
-                            "dpi": dpi,
-                        },
-                        series=edited_series,
-                    )
-                    update_manifest_redraw(project_root, selected.image.relative_path, updated_redraw)
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.success("Metadata saved to .mplgallery/manifest.yaml.")
-                    st.rerun()
+    return edited_series
 
 
 def _plot_label(records: list[PlotRecord], plot_id: str) -> str:

@@ -46,6 +46,8 @@ These are fixed requirements for v1 unless explicitly changed later.
 | Plot backend | Matplotlib is the canonical plotting engine. |
 | UI backend | Streamlit is the Python host layer; a custom HTML/JS component is preferred for the polished tree/grid browser UI. |
 | Data handling | pandas should be used for CSV loading, previewing, validation, and summary statistics. |
+| Model scope | MPLGallery is for plot appearance only. It must not tune, fit, optimize, or alter scientific/model computations. |
+| Plot formats | Support both SVG and PNG. Prefer SVG for clean vector line plots; keep PNG for dense/raster plots, fast previews, compatibility, and cases where SVG becomes too large or inconsistent. |
 
 ---
 
@@ -80,6 +82,8 @@ analysis_group/
 ```
 
 MPLGallery reads `plot_csv_path` with pandas for live cached previews and metadata editing. `raw_csv_path` is provenance-only and must not be mutated by MPLGallery. Live editing writes `.mplgallery/manifest.yaml` plus cached preview images under `.mplgallery/cache`; it must not overwrite generated plot artifacts unless a later explicit overwrite/build action is added.
+
+The UI should expose only plot-look controls: titles, labels, limits, scales, grid, figure size, DPI, colors, markers, line styles, and similar Matplotlib presentation metadata. It should not expose controls for model parameters, fitting, optimization, data generation, or scientific computation.
 
 ### 2.2 UI Baseline From Prior Handoff
 
@@ -596,6 +600,8 @@ The scanner should recursively discover:
 *.svg
 *.csv
 ```
+
+SVG and PNG should remain first-class. SVG is usually better for clean line plots because it scales without blur and can be publication-friendly. PNG remains necessary for dense scatter plots, heatmaps, raster image plots, browser thumbnails, performance-sensitive pages, and workflows where SVG output is too large or renders differently across applications.
 
 Later extensions:
 

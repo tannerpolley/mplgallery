@@ -3,6 +3,9 @@
 `mplgallery` is a local-first Matplotlib plot gallery for projects that generate
 PNG/SVG plots from CSV data.
 
+The package is for plot appearance only. It does not tune, fit, optimize, or
+alter scientific/model computations.
+
 ## Install from GitHub
 
 ```bash
@@ -27,6 +30,13 @@ mplgallery scan /path/to/project
 - Metadata Preview Mode: edit Matplotlib metadata in `.mplgallery/manifest.yaml`
   and render cached previews from plot-ready CSVs without modifying raw CSVs or
   generated plot artifacts.
+
+## Plot Formats
+
+SVG and PNG are both supported. Prefer SVG for clean Matplotlib line plots that
+need crisp scaling or publication-friendly output. Keep PNG support for dense
+scatter plots, heatmaps, raster/image plots, fast cached previews, and cases
+where SVG files become too large or render inconsistently across tools.
 
 ## Recommended Analysis Group Layout
 

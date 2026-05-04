@@ -13,6 +13,8 @@ Matplotlib-generated PNG/SVG plots associated with CSV data files.
 - Streamlit is the UI layer.
 - pandas is used for CSV loading, previewing, validation, and summary statistics.
 - Matplotlib is the canonical rendering engine.
+- MPLGallery is only for plot appearance and artifact browsing; it must not
+  tune, fit, optimize, or alter scientific/model computations.
 - DVC is the regeneration/dependency-tracking layer.
 - MLflow is the run/artifact/history layer.
 - Full-feature v1 expects a plot-ready CSV per plot, with an optional raw/model
@@ -40,6 +42,8 @@ Matplotlib-generated PNG/SVG plots associated with CSV data files.
   regeneration actions.
 - Do not overwrite any plot without first creating a backup.
 - Do not mutate raw CSVs; use `data/plot_ready` CSVs as render sources.
+- Do not add model tuning, fitting, parameter optimization, or data-generation
+  controls to the UI.
 - Keep the first user-facing UI closer to a file explorer than an analytics
   dashboard.
 - Avoid implementing all milestones in one pass.
