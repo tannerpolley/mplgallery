@@ -1,28 +1,72 @@
 version: 1
 records:
-  - plot_path: plots/experiment_001.png
-    csv_path: data/experiment_001.csv
-    redraw:
-      kind: line
-      x: time_s
-      y: [conversion, fit]
-      title: Experiment 001 Conversion
-      xlabel: Time (s)
-      ylabel: Conversion
-      figure:
-        width_inches: 6.0
-        height_inches: 4.0
-        dpi: 150
-  - plot_path: plots/experiment_002.svg
-    csv_path: data/experiment_002.csv
-    redraw:
-      kind: line
-      x: time_s
-      y: [temperature_c, fit]
-      title: Experiment 002 Temperature
-      xlabel: Time (s)
-      ylabel: Temperature (C)
-      figure:
-        width_inches: 6.0
-        height_inches: 4.0
-        dpi: 150
+- plot_path: plots/experiment_001.png
+  raw_csv_path: data/raw/experiment_001_raw.csv
+  plot_csv_path: data/plot_ready/experiment_001_plot.csv
+  redraw:
+    kind: line
+    x: time_s
+    y: []
+    title: Experiment 001 Conversion
+    xlabel: Elapsed time (s)
+    ylabel: Conversion
+    xscale: linear
+    yscale: linear
+    xlim:
+    - 0.0
+    - 10.0
+    ylim:
+    - 0.0
+    - 1.05
+    grid: true
+    figure:
+      width_inches: 6.0
+      height_inches: 4.0
+      dpi: 150
+    series:
+    - y: conversion
+      label: Model conversion
+      color: '#1f77b4'
+      linewidth: 1.6
+      linestyle: '-'
+      marker: o
+      alpha: 0.9
+    - y: fit
+      label: Reference fit
+      color: '#c44e52'
+      linewidth: 2.0
+      linestyle: --
+      marker: ''
+      alpha: 1.0
+- plot_path: plots/experiment_002.svg
+  raw_csv_path: data/raw/experiment_002_raw.csv
+  plot_csv_path: data/plot_ready/experiment_002_plot.csv
+  redraw:
+    kind: line
+    x: time_s
+    y: []
+    title: Experiment 002 Temperature
+    xlabel: Time (s)
+    ylabel: Temperature (C)
+    xscale: linear
+    yscale: linear
+    grid: true
+    figure:
+      width_inches: 6.0
+      height_inches: 4.0
+      dpi: 150
+    series:
+    - y: temperature_c
+      label: Model temperature
+      color: '#3a7d44'
+      linewidth: 1.6
+      linestyle: '-'
+      marker: o
+      alpha: 0.9
+    - y: fit
+      label: Reference fit
+      color: '#6b4c9a'
+      linewidth: 2.0
+      linestyle: --
+      marker: ''
+      alpha: 1.0

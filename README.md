@@ -24,8 +24,25 @@ mplgallery scan /path/to/project
 ## Modes
 
 - Static Gallery Mode: browse PNG/SVG/CSV files without modifying the project.
-- Recipe Mode: edit and regenerate Matplotlib plots using `.mplg.yaml` recipe
-  metadata.
+- Metadata Preview Mode: edit Matplotlib metadata in `.mplgallery/manifest.yaml`
+  and render cached previews from plot-ready CSVs without modifying raw CSVs or
+  generated plot artifacts.
+
+## Recommended Analysis Group Layout
+
+```text
+analysis_group/
+  data/raw/
+  data/plot_ready/
+  plots/
+  scripts/generate_data.py
+  scripts/render_plots.py
+  .mplgallery/manifest.yaml
+  .mplgallery/cache/
+```
+
+Use `raw_csv_path` for immutable model/function outputs and `plot_csv_path` for
+the CSV that MPLGallery reads with pandas for previews and metadata editing.
 
 ## Development
 

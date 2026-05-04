@@ -54,13 +54,21 @@ def _record_for_image(
     manifest: ProjectManifest,
 ) -> PlotRecord:
     manifest_record = manifest.record_for_plot(image.relative_path)
-    if manifest_record and manifest_record.csv_path is not None:
-        manifest_csv = _find_csv(csvs, manifest_record.csv_path)
+    if manifest_record:
+        source_path = manifest_record.plot_csv_path or manifest_record.csv_path
+        manifest_csv = _find_csv(csvs, source_path) if source_path is not None else None
+        raw_csv = (
+            _find_csv(csvs, manifest_record.raw_csv_path)
+            if manifest_record.raw_csv_path is not None
+            else None
+        )
         if manifest_csv is not None:
             return PlotRecord(
                 plot_id=_plot_id(image.relative_path),
                 image=image,
                 csv=manifest_csv,
+                raw_csv=raw_csv,
+                plot_csv=manifest_csv,
                 association_confidence=AssociationConfidence.EXACT,
                 association_reason="manifest override",
                 redraw=manifest_record.redraw,
@@ -95,6 +103,7 @@ def _record_for_image(
         plot_id=_plot_id(image.relative_path),
         image=image,
         csv=best.csv,
+        plot_csv=best.csv,
         association_confidence=best.confidence,
         association_reason=best.reason,
     )

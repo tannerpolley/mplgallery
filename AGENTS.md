@@ -15,8 +15,11 @@ Matplotlib-generated PNG/SVG plots associated with CSV data files.
 - Matplotlib is the canonical rendering engine.
 - DVC is the regeneration/dependency-tracking layer.
 - MLflow is the run/artifact/history layer.
-- v1 assumes one CSV per plot.
+- Full-feature v1 expects a plot-ready CSV per plot, with an optional raw/model
+  CSV tracked as provenance only.
+- Legacy `csv_path` may remain as a compatibility alias for `plot_csv_path`.
 - Live browsing and cached redraws must not overwrite generated plot artifacts.
+- Live metadata edits persist to `.mplgallery/manifest.yaml`, not to CSV files.
 - Any explicit future overwrite action must create a backup first.
 - `.mplgallery/cache` is the default target-project cache for redraw images and
   fingerprints.
@@ -36,6 +39,7 @@ Matplotlib-generated PNG/SVG plots associated with CSV data files.
 - Do not modify target analysis projects except through explicit overwrite or
   regeneration actions.
 - Do not overwrite any plot without first creating a backup.
+- Do not mutate raw CSVs; use `data/plot_ready` CSVs as render sources.
 - Keep the first user-facing UI closer to a file explorer than an analytics
   dashboard.
 - Avoid implementing all milestones in one pass.

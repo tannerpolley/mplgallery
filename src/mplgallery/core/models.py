@@ -33,6 +33,16 @@ class MatplotlibFigureAttributes(BaseModel):
     dpi: int = 150
 
 
+class SeriesStyle(BaseModel):
+    y: str
+    label: str | None = None
+    color: str | None = None
+    linewidth: float | None = None
+    linestyle: str | None = None
+    marker: str | None = None
+    alpha: float | None = None
+
+
 class RedrawMetadata(BaseModel):
     kind: str = "line"
     x: str | None = None
@@ -40,7 +50,13 @@ class RedrawMetadata(BaseModel):
     title: str | None = None
     xlabel: str | None = None
     ylabel: str | None = None
+    xscale: str = "linear"
+    yscale: str = "linear"
+    xlim: tuple[float, float] | None = None
+    ylim: tuple[float, float] | None = None
+    grid: bool = True
     figure: MatplotlibFigureAttributes = Field(default_factory=MatplotlibFigureAttributes)
+    series: list[SeriesStyle] = Field(default_factory=list)
 
 
 class CacheMetadata(BaseModel):
@@ -81,6 +97,8 @@ class ScanResult(BaseModel):
 
 class ManifestRecord(BaseModel):
     plot_path: Path
+    raw_csv_path: Path | None = None
+    plot_csv_path: Path | None = None
     csv_path: Path | None = None
     redraw: RedrawMetadata | None = None
     notes: str | None = None
@@ -90,6 +108,8 @@ class PlotRecord(BaseModel):
     plot_id: str
     image: DiscoveredFile
     csv: DiscoveredFile | None = None
+    raw_csv: DiscoveredFile | None = None
+    plot_csv: DiscoveredFile | None = None
     association_confidence: AssociationConfidence = AssociationConfidence.NONE
     association_reason: str | None = None
     redraw: RedrawMetadata | None = None

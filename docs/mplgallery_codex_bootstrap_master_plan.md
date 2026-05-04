@@ -42,7 +42,7 @@ These are fixed requirements for v1 unless explicitly changed later.
 | Live update behavior | Changed CSV-backed plots should redraw into `.mplgallery/cache` and display the cached image. |
 | Future collaboration | v1 is local-first, but the architecture should allow future team/shared-server mode. |
 | DVC/MLflow | DVC and MLflow remain first-class dependencies for provenance/reproducibility, but static browsing and cached redraws must work without an initialized DVC/MLflow target project. |
-| CSV/plot relation | v1 can assume one CSV per plot. A CSV can contain multiple columns/series used in the same plot. |
+| CSV/plot relation | Full-feature v1 expects one plot-ready CSV per plot, with an optional raw/model CSV tracked as provenance. Legacy `csv_path` remains a temporary compatibility alias for `plot_csv_path`. |
 | Plot backend | Matplotlib is the canonical plotting engine. |
 | UI backend | Streamlit is the Python host layer; a custom HTML/JS component is preferred for the polished tree/grid browser UI. |
 | Data handling | pandas should be used for CSV loading, previewing, validation, and summary statistics. |
@@ -64,7 +64,24 @@ The intended user produces analysis plots from Python scripts, usually with Matp
 
 The software should first feel like a fast local file browser for Matplotlib artifacts. Recipe editing, overwrite flows, DVC controls, and MLflow history should build on that foundation without making the default browsing experience feel like a heavy analytics dashboard.
 
-### 2.1 UI Baseline From Prior Handoff
+### 2.1 Analysis Group Workflow Convention
+
+Full-feature MPLGallery projects should keep raw model outputs, plot-ready data, plotting metadata, and rendering scripts separated:
+
+```text
+analysis_group/
+  data/raw/                 # model/function outputs, immutable by MPLGallery
+  data/plot_ready/          # plotting/prep outputs consumed by MPLGallery
+  plots/                    # generated PNG/SVG artifacts
+  scripts/generate_data.py  # computes raw CSVs only
+  scripts/render_plots.py   # reads raw CSVs, writes plot-ready CSVs, reads YAML, renders figures
+  .mplgallery/manifest.yaml # associations and Matplotlib metadata
+  .mplgallery/cache/        # untracked cached previews
+```
+
+MPLGallery reads `plot_csv_path` with pandas for live cached previews and metadata editing. `raw_csv_path` is provenance-only and must not be mutated by MPLGallery. Live editing writes `.mplgallery/manifest.yaml` plus cached preview images under `.mplgallery/cache`; it must not overwrite generated plot artifacts unless a later explicit overwrite/build action is added.
+
+### 2.2 UI Baseline From Prior Handoff
 
 The prior `plot_gallery_package_ui_handoff.md` is the browsing baseline for v1. Preserve these behaviors:
 
@@ -804,15 +821,38 @@ Example:
 version: 1
 records:
   - plot_id: experiment_001_fit
-    image_path: plots/experiment_001_fit.png
-    csv_path: data/experiment_001.csv
-    recipe_path: .mplgallery/recipes/experiment_001_fit.mplg.yaml
+    plot_path: plots/experiment_001_fit.png
+    raw_csv_path: data/raw/experiment_001_raw.csv
+    plot_csv_path: data/plot_ready/experiment_001_fit.csv
+    redraw:
+      kind: line
+      x: time_s
+      title: "Experiment 001 Fit"
+      xlabel: "Time [s]"
+      ylabel: "Conversion"
+      xscale: linear
+      yscale: linear
+      xlim: [0.0, 10.0]
+      ylim: [0.0, 1.0]
+      grid: true
+      figure:
+        width_inches: 6.0
+        height_inches: 4.0
+        dpi: 150
+      series:
+        - y: conversion
+          label: "Model conversion"
+          color: "#2a6f97"
+          linewidth: 1.8
+          linestyle: "-"
+          marker: "o"
+          alpha: 0.9
     dvc_stage: render_experiment_001_fit
     mode: recipe
     notes: "Manual association confirmed."
 ```
 
-The manifest should support manual association overrides without modifying discovered files.
+The manifest should support manual association overrides and Matplotlib metadata edits without modifying discovered files. `plot_csv_path` is the render source for cached previews; `raw_csv_path` is displayed as provenance only. `csv_path` may be accepted temporarily for older manifests, but new records should use `plot_csv_path`.
 
 ---
 
@@ -1259,16 +1299,22 @@ Codex should create a small sample project:
 ```text
 examples/sample_project/
   data/
-    experiment_001.csv
-    experiment_002.csv
+    raw/
+      experiment_001_raw.csv
+      experiment_002_raw.csv
+    plot_ready/
+      experiment_001_plot.csv
+      experiment_002_plot.csv
   plots/
     experiment_001.png
     experiment_002.svg
   scripts/
-    generate_plots.py
+    generate_data.py
+    render_plots.py
+    generate_plots.py  # compatibility wrapper that runs both scripts
 ```
 
-The sample script should generate deterministic data and plots.
+`generate_data.py` should generate deterministic raw/model CSVs only. `render_plots.py` should read raw CSVs, write plot-ready CSVs, read `.mplgallery/manifest.yaml`, and render PNG/SVG artifacts with Matplotlib.
 
 Example CSV columns:
 
@@ -1411,6 +1457,7 @@ Deliverables:
 - `.mplgallery/config.yaml`;
 - `.mplgallery/manifest.yaml`;
 - manual association override support;
+- manifest fields for `raw_csv_path`, `plot_csv_path`, legacy `csv_path`, and `redraw`;
 - project health page initial version;
 - recipe schema;
 - recipe parser/validator;
@@ -1425,12 +1472,29 @@ uv run mplgallery init examples/sample_project
 uv run mplgallery render examples/sample_project --plot-id experiment_001
 ```
 
-### Milestone 7 — Recipe Editor and Explicit Overwrite Flow
+### Milestone 7 — Metadata Editor and Cached Preview Flow
 
 Deliverables:
 
 - editable controls for title/labels/limits/scale/line/marker/size/DPI;
-- preview rendering;
+- per-series label/color/linewidth/linestyle/marker/alpha controls;
+- YAML metadata persistence in `.mplgallery/manifest.yaml`;
+- preview rendering into `.mplgallery/cache`;
+- per-plot render errors instead of app-level crashes;
+- tests proving raw CSVs and generated plot artifacts are not modified by live edits.
+
+Acceptance:
+
+- edit label in UI;
+- preview updates;
+- manifest changes persist after reload;
+- cached preview uses `plot_csv_path`;
+- raw CSV and original generated artifact remain unchanged.
+
+### Milestone 7.5 — Explicit Overwrite Flow
+
+Deliverables:
+
 - backup-before-overwrite;
 - explicit overwrite original output action;
 - backup manifest;
@@ -1438,10 +1502,8 @@ Deliverables:
 
 Acceptance:
 
-- edit label in UI;
-- preview updates;
 - explicit overwrite creates backup;
-- original PNG path is updated only after explicit overwrite;
+- original PNG/SVG path is updated only after explicit overwrite;
 - backup file exists.
 
 ### Milestone 8 — DVC Integration

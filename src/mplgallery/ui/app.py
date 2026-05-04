@@ -14,8 +14,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from mplgallery.core.associations import build_plot_records
-from mplgallery.core.manifest import load_manifest
-from mplgallery.core.models import PlotRecord
+from mplgallery.core.manifest import ProjectManifest, load_manifest, update_manifest_redraw
+from mplgallery.core.models import CacheMetadata, PlotRecord, RedrawMetadata, SeriesStyle
 from mplgallery.core.renderer import render_cached_plot
 from mplgallery.core.scanner import scan_project
 
@@ -50,14 +50,16 @@ def main() -> None:
 
     try:
         scan = scan_project(project_root)
-        records = [
-            render_cached_plot(project_root, record)
-            for record in build_plot_records(scan, manifest=load_manifest(project_root))
-        ]
+        manifest = load_manifest(project_root)
+        records = _render_records(
+            project_root,
+            build_plot_records(scan, manifest=manifest),
+        )
     except Exception as exc:  # pragma: no cover - Streamlit display path
         st.error(f"Unable to scan project: {exc}")
         return
 
+    _render_metadata_editor(project_root, records, manifest)
     components.html(_render_browser(records), height=900, scrolling=True)
 
 
@@ -404,8 +406,10 @@ def _render_browser(records: list[PlotRecord]) -> str:
                 <details>
                   <summary>details</summary>
                   <code>image: ${{escapeHtml(record.image_path)}}
-csv: ${{escapeHtml(record.csv_path || "unmatched")}}
+plot csv: ${{escapeHtml(record.csv_path || "unmatched")}}
+raw csv: ${{escapeHtml(record.raw_csv_path || "not configured")}}
 cache: ${{escapeHtml(record.cache_path || "not rendered")}}
+render error: ${{escapeHtml(record.render_error || "none")}}
 reason: ${{escapeHtml(record.reason || "")}}
 preview:
 ${{escapeHtml(record.csv_preview || "No CSV preview")}}</code>
@@ -459,12 +463,18 @@ ${{escapeHtml(record.csv_preview || "No CSV preview")}}</code>
 
 def _record_payload(record: PlotRecord) -> dict[str, object]:
     csv_preview = _csv_preview(record)
+    render_error = record.cache.render_error if record.cache else None
     return {
         "id": record.plot_id,
         "name": record.image.relative_path.name,
         "kind": record.image.suffix.removeprefix(".").upper(),
         "image_path": record.image.relative_path.as_posix(),
-        "csv_path": record.csv.relative_path.as_posix() if record.csv else None,
+        "csv_path": record.plot_csv.relative_path.as_posix()
+        if record.plot_csv
+        else record.csv.relative_path.as_posix()
+        if record.csv
+        else None,
+        "raw_csv_path": record.raw_csv.relative_path.as_posix() if record.raw_csv else None,
         "confidence": record.association_confidence.value,
         "reason": record.association_reason,
         "image_src": _image_data_uri(
@@ -473,6 +483,7 @@ def _record_payload(record: PlotRecord) -> dict[str, object]:
         "cache_path": record.cache.cache_path.as_posix()
         if record.cache and record.cache.cache_path
         else None,
+        "render_error": render_error,
         "csv_preview": csv_preview,
     }
 
@@ -488,13 +499,221 @@ def _image_data_uri(path: Path) -> str:
 
 
 def _csv_preview(record: PlotRecord) -> str | None:
-    if record.csv is None:
+    source_csv = record.plot_csv or record.csv
+    if source_csv is None:
         return None
     try:
-        frame = pd.read_csv(record.csv.path, nrows=5)
+        frame = pd.read_csv(source_csv.path, nrows=5)
     except Exception as exc:
         return f"CSV preview failed: {html.escape(str(exc))}"
     return frame.to_string(index=False)
+
+
+def _render_records(project_root: Path, records: list[PlotRecord]) -> list[PlotRecord]:
+    rendered: list[PlotRecord] = []
+    for record in records:
+        try:
+            rendered.append(render_cached_plot(project_root, record))
+        except Exception as exc:
+            rendered.append(
+                record.model_copy(update={"cache": CacheMetadata(render_error=str(exc))})
+            )
+    return rendered
+
+
+def _render_metadata_editor(
+    project_root: Path,
+    records: list[PlotRecord],
+    manifest: ProjectManifest,
+) -> None:
+    editable_records = [record for record in records if record.redraw and (record.plot_csv or record.csv)]
+    with st.expander("Edit metadata", expanded=bool(editable_records)):
+        if not editable_records:
+            st.info("Static or unconfigured plots are view-only until manifest metadata is added.")
+            return
+
+        selected_id = st.selectbox(
+            "Plot",
+            [record.plot_id for record in editable_records],
+            format_func=lambda plot_id: _plot_label(editable_records, plot_id),
+        )
+        selected = next(record for record in editable_records if record.plot_id == selected_id)
+        source_csv = selected.plot_csv or selected.csv
+        assert source_csv is not None
+        redraw = selected.redraw or RedrawMetadata()
+        manifest_record = manifest.record_for_plot(selected.image.relative_path)
+        if manifest_record and manifest_record.raw_csv_path:
+            st.caption(f"Raw CSV (provenance only): {manifest_record.raw_csv_path.as_posix()}")
+        st.caption(f"Render source: {source_csv.relative_path.as_posix()}")
+
+        inferred_series = _series_for_editor(selected)
+        with st.form(f"metadata_editor_{selected.plot_id}"):
+            left, right = st.columns(2)
+            with left:
+                title = st.text_input("Title", value=redraw.title or "")
+                xlabel = st.text_input("X label", value=redraw.xlabel or "")
+                ylabel = st.text_input("Y label", value=redraw.ylabel or "")
+                xscale = st.selectbox(
+                    "X scale",
+                    ["linear", "log", "symlog", "logit"],
+                    index=_scale_index(redraw.xscale),
+                )
+                yscale = st.selectbox(
+                    "Y scale",
+                    ["linear", "log", "symlog", "logit"],
+                    index=_scale_index(redraw.yscale),
+                )
+                xlim = st.text_input("X limits", value=_limits_text(redraw.xlim), placeholder="min,max")
+                ylim = st.text_input("Y limits", value=_limits_text(redraw.ylim), placeholder="min,max")
+            with right:
+                grid = st.checkbox("Grid", value=redraw.grid)
+                width_inches = st.number_input(
+                    "Figure width (in)",
+                    min_value=1.0,
+                    max_value=24.0,
+                    value=float(redraw.figure.width_inches),
+                    step=0.25,
+                )
+                height_inches = st.number_input(
+                    "Figure height (in)",
+                    min_value=1.0,
+                    max_value=24.0,
+                    value=float(redraw.figure.height_inches),
+                    step=0.25,
+                )
+                dpi = st.number_input(
+                    "DPI",
+                    min_value=50,
+                    max_value=600,
+                    value=int(redraw.figure.dpi),
+                    step=10,
+                )
+
+            st.markdown("**Series styles**")
+            edited_series: list[SeriesStyle] = []
+            for index, style in enumerate(inferred_series):
+                cols = st.columns([1.3, 1.3, 1, 1, 1, 1])
+                y_column = cols[0].text_input("Y column", value=style.y, key=f"{selected.plot_id}_{index}_y")
+                label = cols[1].text_input(
+                    "Label",
+                    value=style.label or "",
+                    key=f"{selected.plot_id}_{index}_label",
+                )
+                color = cols[2].text_input(
+                    "Color",
+                    value=style.color or "",
+                    key=f"{selected.plot_id}_{index}_color",
+                )
+                linewidth = cols[3].number_input(
+                    "Width",
+                    min_value=0.1,
+                    max_value=20.0,
+                    value=float(style.linewidth or 1.5),
+                    step=0.1,
+                    key=f"{selected.plot_id}_{index}_linewidth",
+                )
+                linestyle = cols[4].text_input(
+                    "Line",
+                    value=style.linestyle or "-",
+                    key=f"{selected.plot_id}_{index}_linestyle",
+                )
+                marker = cols[5].text_input(
+                    "Marker",
+                    value=style.marker if style.marker is not None else "o",
+                    key=f"{selected.plot_id}_{index}_marker",
+                )
+                alpha = st.slider(
+                    f"Alpha for {y_column}",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=float(style.alpha if style.alpha is not None else 1.0),
+                    step=0.05,
+                    key=f"{selected.plot_id}_{index}_alpha",
+                )
+                if y_column:
+                    edited_series.append(
+                        SeriesStyle(
+                            y=y_column,
+                            label=label or None,
+                            color=color or None,
+                            linewidth=linewidth,
+                            linestyle=linestyle or None,
+                            marker=marker,
+                            alpha=alpha,
+                        )
+                    )
+
+            submitted = st.form_submit_button("Save metadata and render cached preview")
+            if submitted:
+                try:
+                    updated_redraw = RedrawMetadata(
+                        kind=redraw.kind,
+                        x=redraw.x,
+                        title=title or None,
+                        xlabel=xlabel or None,
+                        ylabel=ylabel or None,
+                        xscale=xscale,
+                        yscale=yscale,
+                        xlim=_parse_limits(xlim),
+                        ylim=_parse_limits(ylim),
+                        grid=grid,
+                        figure={
+                            "width_inches": width_inches,
+                            "height_inches": height_inches,
+                            "dpi": dpi,
+                        },
+                        series=edited_series,
+                    )
+                    update_manifest_redraw(project_root, selected.image.relative_path, updated_redraw)
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("Metadata saved to .mplgallery/manifest.yaml.")
+                    st.rerun()
+
+
+def _plot_label(records: list[PlotRecord], plot_id: str) -> str:
+    record = next(record for record in records if record.plot_id == plot_id)
+    return record.image.relative_path.as_posix()
+
+
+def _series_for_editor(record: PlotRecord) -> list[SeriesStyle]:
+    if record.redraw is None:
+        return []
+    if record.redraw.series:
+        return record.redraw.series
+    if record.redraw.y:
+        return [SeriesStyle(y=column) for column in record.redraw.y]
+    source_csv = record.plot_csv or record.csv
+    if source_csv is None:
+        return []
+    try:
+        frame = pd.read_csv(source_csv.path, nrows=1)
+    except Exception:
+        return []
+    x_column = record.redraw.x or frame.columns[0]
+    return [SeriesStyle(y=column) for column in frame.columns if column != x_column]
+
+
+def _scale_index(scale: str) -> int:
+    scales = ["linear", "log", "symlog", "logit"]
+    return scales.index(scale) if scale in scales else 0
+
+
+def _limits_text(limits: tuple[float, float] | None) -> str:
+    if limits is None:
+        return ""
+    return f"{limits[0]},{limits[1]}"
+
+
+def _parse_limits(value: str) -> tuple[float, float] | None:
+    stripped = value.strip()
+    if not stripped:
+        return None
+    parts = [part.strip() for part in stripped.split(",")]
+    if len(parts) != 2:
+        raise ValueError("Limits must be blank or formatted as min,max.")
+    return float(parts[0]), float(parts[1])
 
 
 if __name__ == "__main__":
