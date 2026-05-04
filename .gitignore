@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local IDE state
+.idea/
+
+# Bootstrap handoff copy kept at repo root by the initial Codex prompt
+/mplgallery_codex_bootstrap_master_plan.md
