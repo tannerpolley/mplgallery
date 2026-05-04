@@ -34,14 +34,17 @@ These are fixed requirements for v1 unless explicitly changed later.
 
 | Decision | Requirement |
 |---|---|
-| Plot overwrite behavior | Edited recipe-enabled plots should overwrite the original PNG/SVG output path by default. |
-| Backup behavior | Before overwriting, always create a backup copy. |
-| Recipe metadata | Lightweight recipe metadata is acceptable and expected. |
+| Product shape | v1 is a fast local plot artifact browser first, not an editing workbench first. |
+| Package workflow | `uv` is the primary package and environment manager for development. |
+| Plot overwrite behavior | Live browsing and cached redraws must not overwrite generated plot artifacts by default. Overwrite is a later explicit recipe/render action. |
+| Backup behavior | Any future overwrite action must create a backup copy first. |
+| Recipe metadata | Lightweight recipe metadata is acceptable and expected for reliable redraw/edit flows. |
+| Live update behavior | Changed CSV-backed plots should redraw into `.mplgallery/cache` and display the cached image. |
 | Future collaboration | v1 is local-first, but the architecture should allow future team/shared-server mode. |
-| DVC/MLflow | DVC and MLflow should be first-class tools. They can be mandatory dependencies if that is the cleanest design. |
+| DVC/MLflow | DVC and MLflow remain first-class dependencies for provenance/reproducibility, but static browsing and cached redraws must work without an initialized DVC/MLflow target project. |
 | CSV/plot relation | v1 can assume one CSV per plot. A CSV can contain multiple columns/series used in the same plot. |
 | Plot backend | Matplotlib is the canonical plotting engine. |
-| UI backend | Streamlit is the recommended first UI layer. |
+| UI backend | Streamlit is the Python host layer; a custom HTML/JS component is preferred for the polished tree/grid browser UI. |
 | Data handling | pandas should be used for CSV loading, previewing, validation, and summary statistics. |
 
 ---
@@ -55,11 +58,35 @@ pip install git+https://github.com/<owner>/mplgallery.git
 mplgallery serve /path/to/analysis/project
 ```
 
-The package should launch a local Streamlit app that scans the selected project root, finds plots and CSV files, and presents them as an organized, searchable plot gallery.
+The package should launch a local plot artifact browser backed by Streamlit/Python services. It should scan the selected project root, find plots and CSV files, and present them through a dense file-explorer-style UI with a folder tree and responsive image grid.
 
 The intended user produces analysis plots from Python scripts, usually with Matplotlib, where source data is stored as CSV and output plots are saved as PNG or SVG. The goal is to avoid manually hunting through folders for plots and data files.
 
-The software should eventually feel like a lightweight local "Matplotlib workbench" for scientific/engineering analysis projects.
+The software should first feel like a fast local file browser for Matplotlib artifacts. Recipe editing, overwrite flows, DVC controls, and MLflow history should build on that foundation without making the default browsing experience feel like a heavy analytics dashboard.
+
+### 2.1 UI Baseline From Prior Handoff
+
+The prior `plot_gallery_package_ui_handoff.md` is the browsing baseline for v1. Preserve these behaviors:
+
+- file-explorer-style left sidebar;
+- expandable/collapsible folder rows;
+- separate disclosure controls from folder selection checkboxes;
+- folder checkboxes select every plot in that folder and all descendants;
+- multiple folders can be selected at once;
+- search filters visible plots without destroying selected folder state;
+- output-tree browsing by default, with source-tree mode later;
+- responsive image grid as the main content;
+- compact, scannable cards where plot images dominate;
+- tile-size control;
+- light theme, dense layout, simple borders, and minimal decoration.
+
+Avoid UI regressions:
+
+- do not make users browse one plot at a time;
+- do not use a dropdown as the primary plot selector;
+- do not show long paths or raw metadata on every card by default;
+- do not let controls consume more vertical space than the plot images;
+- do not make the sidebar feel like a form instead of a file explorer.
 
 ---
 
@@ -748,9 +775,13 @@ association:
   assume_one_csv_per_plot: true
   allow_low_confidence_matches: true
 rendering:
-  overwrite_originals: true
+  overwrite_originals: false
   backup_before_overwrite: true
   backup_dir: ".mplgallery/backups"
+cache:
+  enabled: true
+  image_cache_dir: ".mplgallery/cache"
+  fingerprint_strategy: "size_mtime"
 mlflow:
   enabled: true
   tracking_uri: "file:./mlruns"
@@ -762,6 +793,8 @@ ui:
   thumbnail_width: 320
   max_csv_preview_rows: 1000
 ```
+
+`.mplgallery/cache` is the default target-project location for untracked cached redraw images and CSV fingerprints. It should be ignored in target projects and must not be treated as the source of truth for generated artifacts.
 
 ### 14.2 `manifest.yaml`
 
@@ -1084,7 +1117,11 @@ Do not hard-code local file tracking only.
 
 ---
 
-## 20. Streamlit UI Plan
+## 20. Browser-First UI Plan
+
+Streamlit should host the local app, provide Python data access, and coordinate scanning, pandas previews, fingerprints, cached redraws, and errors. The polished browser surface should come from custom HTML/JS components where Streamlit-native widgets are too bulky for a file-explorer UI.
+
+The default view should be a local artifact browser, not an analytics dashboard.
 
 ### 20.1 Pages
 
@@ -1104,11 +1141,14 @@ History
 
 Features:
 
-- project root display;
-- rescan button;
-- search box;
+- compact sidebar with search;
+- output-tree folder browser by default;
+- expand all, collapse all, clear selection controls;
+- folder checkboxes that preserve selection state while search filters;
+- responsive image grid;
+- tile-size control;
+- minimal refresh/cache status;
 - filters by extension, association confidence, recipe status, directory, modified date;
-- grid/card display of thumbnails;
 - badges:
   - Static
   - Recipe
@@ -1117,6 +1157,8 @@ Features:
   - DVC stage
   - MLflow history
 - multi-select checkboxes for comparison.
+
+Paths, cache paths, raw CSV tables, and debug metadata should be available on demand, not visible on every card by default.
 
 ### 20.3 Plot Detail Page
 
@@ -1269,7 +1311,7 @@ uv sync --dev
 uv run python -c "import mplgallery; print(mplgallery.__version__)"
 ```
 
-### Milestone 1 — Scanner and Association Core
+### Milestone 1 — Scanner, Manifest, and Association Core
 
 Deliverables:
 
@@ -1277,8 +1319,11 @@ Deliverables:
 - ignore rules;
 - Pydantic file models;
 - plot record model;
+- manifest record model;
+- cache metadata hooks for `.mplgallery/cache`;
 - association scoring;
-- scanner and association tests;
+- optional manifest association overrides;
+- scanner, manifest, and association tests;
 - `mplgallery scan <project_root>` summary output.
 
 Acceptance:
@@ -1288,20 +1333,23 @@ uv run pytest tests/test_scanner.py tests/test_associations.py
 uv run mplgallery scan examples/sample_project
 ```
 
-### Milestone 2 — Basic Streamlit Gallery
+### Milestone 2 — Live Browser Shell
 
 Deliverables:
 
 - `mplgallery serve <project_root>` launches Streamlit;
-- gallery page displays discovered PNG/SVG files;
+- Streamlit passes scan/index data to a browser-first gallery surface;
+- gallery page displays discovered PNG/SVG files in a dense responsive grid;
+- compact output-tree sidebar;
 - selected plot detail panel;
 - associated CSV preview with pandas;
-- basic filters/search.
+- basic filters/search;
+- tile-size control.
 
 Acceptance:
 
 ```bash
-mplgallery serve examples/sample_project
+uv run mplgallery serve examples/sample_project
 ```
 
 Manual validation:
@@ -1311,7 +1359,51 @@ Manual validation:
 - CSV preview appears for matched plot;
 - unmatched files are visible and labeled.
 
-### Milestone 3 — Project Metadata
+### Milestone 3 — Custom Tree/Grid Component
+
+Deliverables:
+
+- custom HTML/JS component for the file-explorer tree and image grid;
+- separate expand/collapse controls from folder checkboxes;
+- multiple folder selection;
+- search that preserves tree selection state;
+- card layout where images dominate and metadata is on demand.
+
+Acceptance:
+
+- Browser validation shows output-tree selection and grid filtering work without replacing the UI with dropdown-based browsing.
+
+### Milestone 4 — Cached CSV Redraws
+
+Deliverables:
+
+- CSV fingerprinting by size and modification time;
+- metadata-driven CSV-to-Matplotlib redraw path using pandas-loaded CSV data;
+- cached redraw outputs under `.mplgallery/cache`;
+- per-plot render error reporting;
+- original PNG/SVG artifacts remain unchanged by default.
+
+Acceptance:
+
+- changing a CSV regenerates only the affected cached image;
+- gallery displays the cached redraw;
+- tracked/generated plot artifacts are not overwritten.
+
+### Milestone 5 — Static Build
+
+Deliverables:
+
+- `mplgallery build <project_root>`;
+- static `index.html` output that preserves the tree/grid browsing model;
+- documented generated output location.
+
+Acceptance:
+
+```bash
+uv run mplgallery build examples/sample_project
+```
+
+### Milestone 6 — Project Metadata and Recipe Parsing
 
 Deliverables:
 
@@ -1319,19 +1411,7 @@ Deliverables:
 - `.mplgallery/config.yaml`;
 - `.mplgallery/manifest.yaml`;
 - manual association override support;
-- project health page initial version.
-
-Acceptance:
-
-```bash
-mplgallery init examples/sample_project
-mplgallery scan examples/sample_project
-```
-
-### Milestone 4 — Recipe Parsing and Static Rendering
-
-Deliverables:
-
+- project health page initial version;
 - recipe schema;
 - recipe parser/validator;
 - basic recipe renderer for `line`, `scatter`, and `line_scatter`;
@@ -1341,17 +1421,18 @@ Deliverables:
 Acceptance:
 
 ```bash
-mplgallery render examples/sample_project --plot-id experiment_001
+uv run mplgallery init examples/sample_project
+uv run mplgallery render examples/sample_project --plot-id experiment_001
 ```
 
-### Milestone 5 — Streamlit Recipe Editor and Overwrite Flow
+### Milestone 7 — Recipe Editor and Explicit Overwrite Flow
 
 Deliverables:
 
 - editable controls for title/labels/limits/scale/line/marker/size/DPI;
 - preview rendering;
 - backup-before-overwrite;
-- overwrite original output;
+- explicit overwrite original output action;
 - backup manifest;
 - tests for backup behavior.
 
@@ -1359,11 +1440,11 @@ Acceptance:
 
 - edit label in UI;
 - preview updates;
-- overwrite creates backup;
-- original PNG path is updated;
+- explicit overwrite creates backup;
+- original PNG path is updated only after explicit overwrite;
 - backup file exists.
 
-### Milestone 6 — DVC Integration
+### Milestone 8 — DVC Integration
 
 Deliverables:
 
@@ -1375,11 +1456,11 @@ Deliverables:
 Acceptance:
 
 ```bash
-mplgallery dvc init-stages examples/sample_project
+uv run mplgallery dvc init-stages examples/sample_project
 dvc repro render_experiment_001
 ```
 
-### Milestone 7 — MLflow Integration
+### Milestone 9 — MLflow Integration
 
 Deliverables:
 
@@ -1395,7 +1476,7 @@ Acceptance:
 - output plot and recipe are logged as artifacts;
 - params appear in run data.
 
-### Milestone 8 — Hardening and GitHub Install Workflow
+### Milestone 10 — Hardening and GitHub Install Workflow
 
 Deliverables:
 

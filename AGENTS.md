@@ -16,8 +16,10 @@ Matplotlib-generated PNG/SVG plots associated with CSV data files.
 - DVC is the regeneration/dependency-tracking layer.
 - MLflow is the run/artifact/history layer.
 - v1 assumes one CSV per plot.
-- Edited recipe-enabled plots overwrite originals by default.
-- Before overwriting, always create a backup.
+- Live browsing and cached redraws must not overwrite generated plot artifacts.
+- Any explicit future overwrite action must create a backup first.
+- `.mplgallery/cache` is the default target-project cache for redraw images and
+  fingerprints.
 - Static gallery mode must be read-only.
 - True Matplotlib-level editing requires recipe metadata.
 
@@ -34,6 +36,8 @@ Matplotlib-generated PNG/SVG plots associated with CSV data files.
 - Do not modify target analysis projects except through explicit overwrite or
   regeneration actions.
 - Do not overwrite any plot without first creating a backup.
+- Keep the first user-facing UI closer to a file explorer than an analytics
+  dashboard.
 - Avoid implementing all milestones in one pass.
 
 ## Commands
