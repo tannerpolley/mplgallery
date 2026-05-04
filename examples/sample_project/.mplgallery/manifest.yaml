@@ -1,0 +1,28 @@
+version: 1
+records:
+  - plot_path: plots/experiment_001.png
+    csv_path: data/experiment_001.csv
+    redraw:
+      kind: line
+      x: time_s
+      y: [conversion, fit]
+      title: Experiment 001 Conversion
+      xlabel: Time (s)
+      ylabel: Conversion
+      figure:
+        width_inches: 6.0
+        height_inches: 4.0
+        dpi: 150
+  - plot_path: plots/experiment_002.svg
+    csv_path: data/experiment_002.csv
+    redraw:
+      kind: line
+      x: time_s
+      y: [temperature_c, fit]
+      title: Experiment 002 Temperature
+      xlabel: Time (s)
+      ylabel: Temperature (C)
+      figure:
+        width_inches: 6.0
+        height_inches: 4.0
+        dpi: 150

@@ -216,6 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+**/.mplgallery/cache/
 
 # Local IDE state
 .idea/
