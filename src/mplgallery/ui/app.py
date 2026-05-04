@@ -14,10 +14,31 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from mplgallery.core.associations import build_plot_records
-from mplgallery.core.manifest import ProjectManifest, load_manifest, update_manifest_redraw
+from mplgallery.core.manifest import load_manifest, update_manifest_redraw
 from mplgallery.core.models import CacheMetadata, PlotRecord, RedrawMetadata, SeriesStyle
 from mplgallery.core.renderer import render_cached_plot
 from mplgallery.core.scanner import scan_project
+
+
+LINESTYLE_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("-", "━━ Solid"),
+    ("--", "─ ─ Dashed"),
+    ("-.", "─ · Dash-dot"),
+    (":", "··· Dotted"),
+    ("", "No connecting line"),
+)
+
+MARKER_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("o", "● Circle"),
+    ("s", "■ Square"),
+    ("D", "◆ Diamond"),
+    ("^", "▲ Triangle up"),
+    ("v", "▼ Triangle down"),
+    ("x", "× X"),
+    ("+", "+ Plus"),
+    (".", "• Point"),
+    ("", "No marker"),
+)
 
 
 def main() -> None:
@@ -38,8 +59,8 @@ def main() -> None:
             background: transparent;
         }
         .block-container {
-            padding-top: 1.25rem;
-            max-width: 1280px;
+            padding: 1.1rem 1.1rem 2rem;
+            max-width: 1800px;
         }
         h1, p, span, label {
             color: #17202f;
@@ -68,6 +89,14 @@ def main() -> None:
             min-height: 1.65rem;
             font-size: 0.78rem;
         }
+        [data-testid="stSelectbox"] label,
+        [data-testid="stTextInput"] label,
+        [data-testid="stNumberInput"] label,
+        [data-testid="stSlider"] label,
+        [data-testid="stCheckbox"] label {
+            font-size: 0.74rem !important;
+            color: #4d5a6c !important;
+        }
         div.stButton > button,
         [data-testid="stPopover"] button,
         button[data-testid="stBaseButton-secondary"],
@@ -85,6 +114,33 @@ def main() -> None:
         button[data-testid="stBaseButton-tertiary"]:hover {
             border-color: #256f8f !important;
             color: #256f8f !important;
+        }
+        [data-testid="stPopover"] button:focus,
+        [data-testid="stPopover"] button:active,
+        [data-testid="stExpander"] details:focus-within,
+        [data-testid="stNumberInput"] button:focus,
+        [data-testid="stNumberInput"] button:active {
+            border-color: #256f8f !important;
+            box-shadow: 0 0 0 1px #256f8f !important;
+        }
+        [data-testid="stNumberInput"] button {
+            background: #ffffff !important;
+            color: #17202f !important;
+            border-color: #b7c0ce !important;
+        }
+        [data-testid="stNumberInput"] button svg {
+            fill: #17202f !important;
+        }
+        [data-testid="stExpander"] summary:focus,
+        [data-testid="stExpander"] summary:active,
+        [data-testid="stExpander"] details[open] summary {
+            border-color: #256f8f !important;
+            box-shadow: 0 0 0 1px #256f8f !important;
+            outline-color: #256f8f !important;
+        }
+        [data-testid="stSlider"] [role="slider"] {
+            background-color: #256f8f !important;
+            border-color: #256f8f !important;
         }
         [data-testid="column"] {
             gap: 0.35rem;
@@ -107,12 +163,40 @@ def main() -> None:
             color: #17202f !important;
         }
         [data-baseweb="popover"] input,
+        [data-baseweb="popover"] [role="listbox"],
+        [data-baseweb="menu"],
+        [data-baseweb="menu"] ul,
+        [data-baseweb="menu"] li,
         [data-baseweb="select"] > div,
         [data-testid="stNumberInput"] input,
         [data-testid="stTextInput"] input {
             background: #ffffff !important;
             color: #17202f !important;
             border-color: #b7c0ce !important;
+            caret-color: #17202f !important;
+        }
+        input[type="checkbox"],
+        input[type="range"] {
+            accent-color: #256f8f !important;
+        }
+        [role="option"],
+        [role="listbox"] {
+            background: #ffffff !important;
+            color: #17202f !important;
+        }
+        [role="option"]:hover {
+            background: #eef3f7 !important;
+        }
+        [data-baseweb="input"] input,
+        [data-baseweb="textarea"] textarea {
+            caret-color: #17202f !important;
+        }
+        [data-baseweb="input"]:focus-within,
+        [data-baseweb="select"]:focus-within,
+        [data-testid="stTextInput"] div:focus-within,
+        [data-testid="stNumberInput"] div:focus-within {
+            border-color: #256f8f !important;
+            box-shadow: 0 0 0 1px #256f8f !important;
         }
         </style>
         """,
@@ -132,8 +216,8 @@ def main() -> None:
         st.error(f"Unable to scan project: {exc}")
         return
 
-    _render_metadata_editor(project_root, records, manifest, _selected_plot_id_from_query())
-    components.html(_render_browser(records), height=900, scrolling=True)
+    _render_metadata_editor(project_root, records, _selected_plot_id_from_query())
+    components.html(_render_browser(records), height=1080, scrolling=True)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -175,8 +259,8 @@ def _render_browser(records: list[PlotRecord]) -> str:
             }}
             .shell {{
               display: grid;
-              grid-template-columns: 300px 1fr;
-              min-height: 860px;
+              grid-template-columns: 280px 1fr;
+              min-height: 1040px;
               border: 1px solid var(--line);
               background: var(--panel);
             }}
@@ -188,7 +272,7 @@ def _render_browser(records: list[PlotRecord]) -> str:
             }}
             main {{
               min-width: 0;
-              padding: 14px 16px 24px;
+              padding: 14px 18px 28px;
               overflow: auto;
             }}
             .toolbar, .tree-actions {{
@@ -216,7 +300,14 @@ def _render_browser(records: list[PlotRecord]) -> str:
               padding: 8px 10px;
               border: 1px solid var(--line-strong);
               border-radius: 4px;
+              background: #fff;
+              color: var(--ink);
+              caret-color: var(--ink);
               font: inherit;
+            }}
+            input[type="checkbox"],
+            input[type="range"] {{
+              accent-color: var(--accent);
             }}
             button {{
               border: 1px solid var(--line-strong);
@@ -258,7 +349,7 @@ def _render_browser(records: list[PlotRecord]) -> str:
             .grid {{
               display: grid;
               grid-template-columns: repeat(auto-fill, minmax(var(--tile-size), 1fr));
-              gap: 12px;
+              gap: 14px;
             }}
             .card {{
               border: 1px solid var(--line);
@@ -269,7 +360,7 @@ def _render_browser(records: list[PlotRecord]) -> str:
             }}
             .thumb {{
               width: 100%;
-              height: calc(var(--tile-size) * 0.72);
+              height: calc(var(--tile-size) * 0.66);
               object-fit: contain;
               display: block;
               background: #fff;
@@ -384,7 +475,7 @@ def _render_browser(records: list[PlotRecord]) -> str:
                   <strong id="visibleCount">0 plots</strong>
                   <span id="status"></span>
                 </div>
-                <label>Tile size <input id="tile" type="range" min="170" max="420" value="260" /></label>
+                <label>Tile size <input id="tile" type="range" min="220" max="620" value="360" /></label>
               </div>
               <div id="grid" class="grid"></div>
             </main>
@@ -395,7 +486,7 @@ def _render_browser(records: list[PlotRecord]) -> str:
               expanded: new Set(["."]),
               selected: new Set(["."]),
               query: "",
-              tile: 260,
+              tile: 360,
             }};
 
             function foldersFor(record) {{
@@ -649,7 +740,6 @@ def _render_records(project_root: Path, records: list[PlotRecord]) -> list[PlotR
 def _render_metadata_editor(
     project_root: Path,
     records: list[PlotRecord],
-    manifest: ProjectManifest,
     selected_plot_id: str | None,
 ) -> None:
     editable_records = [record for record in records if record.redraw and (record.plot_csv or record.csv)]
@@ -665,45 +755,42 @@ def _render_metadata_editor(
             label_visibility="collapsed",
         )
         selected = next(record for record in editable_records if record.plot_id == selected_id)
-        _render_selected_plot_editor(project_root, selected, manifest)
+        _render_selected_plot_editor(project_root, selected)
 
 
 def _render_selected_plot_editor(
     project_root: Path,
     selected: PlotRecord,
-    manifest: ProjectManifest,
 ) -> None:
-    source_csv = selected.plot_csv or selected.csv
-    assert source_csv is not None
     redraw = selected.redraw or RedrawMetadata()
-    manifest_record = manifest.record_for_plot(selected.image.relative_path)
 
-    preview_col, controls_col = st.columns([1.15, 1], gap="small")
-    with preview_col:
-        st.image(
-            selected.cache.cache_path if selected.cache and selected.cache.cache_path else selected.image.path,
-            caption=selected.image.relative_path.as_posix(),
-            width="stretch",
-        )
-    with controls_col:
-        st.caption("Plot look")
-        st.markdown(f"**{selected.image.relative_path.name}**")
-        if manifest_record and manifest_record.raw_csv_path:
-            st.caption(f"raw: {manifest_record.raw_csv_path.as_posix()}")
-        st.caption(f"render: {source_csv.relative_path.as_posix()}")
-
+    st.image(
+        selected.cache.cache_path if selected.cache and selected.cache.cache_path else selected.image.path,
+        caption=selected.image.relative_path.as_posix(),
+        width="stretch",
+    )
+    toolbar_cols = st.columns([0.1, 0.1, 0.1, 0.1, 0.6], gap="small")
+    with toolbar_cols[0]:
         axis_values = _render_axis_popover(selected, redraw)
+    with toolbar_cols[1]:
         figure_values = _render_figure_popover(selected, redraw)
+    with toolbar_cols[2]:
         edited_series = _render_series_popover(selected, _series_for_editor(selected))
-        if st.button("Save", key=f"{selected.plot_id}_save"):
-            _save_selected_plot_metadata(
-                project_root,
-                selected,
-                redraw,
-                axis_values,
-                figure_values,
-                edited_series,
-            )
+    with toolbar_cols[3]:
+        should_save = st.button(
+            "Save",
+            key=f"{selected.plot_id}_save",
+            use_container_width=True,
+        )
+    if should_save:
+        _save_selected_plot_metadata(
+            project_root,
+            selected,
+            redraw,
+            axis_values,
+            figure_values,
+            edited_series,
+        )
 
 
 def _save_selected_plot_metadata(
@@ -744,38 +831,47 @@ def _save_selected_plot_metadata(
 def _render_axis_popover(record: PlotRecord, redraw: RedrawMetadata) -> dict[str, str]:
     with st.popover("Axes"):
         title = st.text_input("Title", value=redraw.title or "", key=f"{record.plot_id}_title")
-        xlabel = st.text_input("X label", value=redraw.xlabel or "", key=f"{record.plot_id}_xlabel")
-        ylabel = st.text_input("Y label", value=redraw.ylabel or "", key=f"{record.plot_id}_ylabel")
-        xscale = st.selectbox(
+        label_cols = st.columns(2)
+        xlabel = label_cols[0].text_input(
+            "X label",
+            value=redraw.xlabel or "",
+            key=f"{record.plot_id}_xlabel",
+        )
+        ylabel = label_cols[1].text_input(
+            "Y label",
+            value=redraw.ylabel or "",
+            key=f"{record.plot_id}_ylabel",
+        )
+        scale_cols = st.columns(2)
+        xscale = scale_cols[0].selectbox(
             "X scale",
             ["linear", "log", "symlog", "logit"],
             index=_scale_index(redraw.xscale),
             key=f"{record.plot_id}_xscale",
         )
-        yscale = st.selectbox(
+        yscale = scale_cols[1].selectbox(
             "Y scale",
             ["linear", "log", "symlog", "logit"],
             index=_scale_index(redraw.yscale),
             key=f"{record.plot_id}_yscale",
         )
-        x_min_col, x_max_col = st.columns(2)
-        x_min = x_min_col.text_input(
+        limit_cols = st.columns(4)
+        x_min = limit_cols[0].text_input(
             "X min",
             value=_limit_bound_text(redraw.xlim, 0),
             key=f"{record.plot_id}_x_min",
         )
-        x_max = x_max_col.text_input(
+        x_max = limit_cols[1].text_input(
             "X max",
             value=_limit_bound_text(redraw.xlim, 1),
             key=f"{record.plot_id}_x_max",
         )
-        y_min_col, y_max_col = st.columns(2)
-        y_min = y_min_col.text_input(
+        y_min = limit_cols[2].text_input(
             "Y min",
             value=_limit_bound_text(redraw.ylim, 0),
             key=f"{record.plot_id}_y_min",
         )
-        y_max = y_max_col.text_input(
+        y_max = limit_cols[3].text_input(
             "Y max",
             value=_limit_bound_text(redraw.ylim, 1),
             key=f"{record.plot_id}_y_max",
@@ -796,7 +892,8 @@ def _render_axis_popover(record: PlotRecord, redraw: RedrawMetadata) -> dict[str
 def _render_figure_popover(record: PlotRecord, redraw: RedrawMetadata) -> dict[str, object]:
     with st.popover("Figure"):
         grid = st.checkbox("Grid", value=redraw.grid, key=f"{record.plot_id}_grid")
-        width_inches = st.number_input(
+        figure_cols = st.columns(3)
+        width_inches = figure_cols[0].number_input(
             "Width",
             min_value=1.0,
             max_value=24.0,
@@ -804,7 +901,7 @@ def _render_figure_popover(record: PlotRecord, redraw: RedrawMetadata) -> dict[s
             step=0.25,
             key=f"{record.plot_id}_width",
         )
-        height_inches = st.number_input(
+        height_inches = figure_cols[1].number_input(
             "Height",
             min_value=1.0,
             max_value=24.0,
@@ -812,7 +909,7 @@ def _render_figure_popover(record: PlotRecord, redraw: RedrawMetadata) -> dict[s
             step=0.25,
             key=f"{record.plot_id}_height",
         )
-        dpi = st.number_input(
+        dpi = figure_cols[2].number_input(
             "DPI",
             min_value=50,
             max_value=600,
@@ -839,8 +936,8 @@ def _render_series_popover(record: PlotRecord, series: list[SeriesStyle]) -> lis
                     value=style.color or "#1f77b4",
                     key=f"{record.plot_id}_{index}_color",
                 )
-                cols = st.columns(3)
-                linewidth = cols[0].number_input(
+                width_col, opacity_col = st.columns([1, 1])
+                linewidth = width_col.number_input(
                     "Width",
                     min_value=0.1,
                     max_value=20.0,
@@ -848,17 +945,7 @@ def _render_series_popover(record: PlotRecord, series: list[SeriesStyle]) -> lis
                     step=0.1,
                     key=f"{record.plot_id}_{index}_linewidth",
                 )
-                linestyle = cols[1].text_input(
-                    "Line",
-                    value=style.linestyle or "-",
-                    key=f"{record.plot_id}_{index}_linestyle",
-                )
-                marker = cols[2].text_input(
-                    "Marker",
-                    value=style.marker if style.marker is not None else "o",
-                    key=f"{record.plot_id}_{index}_marker",
-                )
-                opacity = st.slider(
+                opacity = opacity_col.slider(
                     "Opacity",
                     min_value=0.0,
                     max_value=1.0,
@@ -866,6 +953,29 @@ def _render_series_popover(record: PlotRecord, series: list[SeriesStyle]) -> lis
                     step=0.05,
                     help="Opacity controls transparency. 1.0 is fully opaque; lower values make the line and markers more transparent.",
                     key=f"{record.plot_id}_{index}_alpha",
+                )
+                line_col, marker_col = st.columns([1, 1])
+                linestyle = line_col.selectbox(
+                    "Line",
+                    [value for value, _label in LINESTYLE_OPTIONS],
+                    index=_style_option_index(
+                        LINESTYLE_OPTIONS,
+                        style.linestyle,
+                        default="-",
+                    ),
+                    format_func=lambda value: _style_option_label(LINESTYLE_OPTIONS, value),
+                    key=f"{record.plot_id}_{index}_linestyle",
+                )
+                marker = marker_col.selectbox(
+                    "Marker",
+                    [value for value, _label in MARKER_OPTIONS],
+                    index=_style_option_index(
+                        MARKER_OPTIONS,
+                        style.marker,
+                        default="o",
+                    ),
+                    format_func=lambda value: _style_option_label(MARKER_OPTIONS, value),
+                    key=f"{record.plot_id}_{index}_marker",
                 )
                 if y_column:
                     edited_series.append(
@@ -875,7 +985,7 @@ def _render_series_popover(record: PlotRecord, series: list[SeriesStyle]) -> lis
                             color=color or None,
                             linewidth=linewidth,
                             linestyle=linestyle or None,
-                            marker=marker,
+                            marker=marker or None,
                             alpha=opacity,
                         )
                     )
@@ -924,6 +1034,21 @@ def _series_for_editor(record: PlotRecord) -> list[SeriesStyle]:
 def _scale_index(scale: str) -> int:
     scales = ["linear", "log", "symlog", "logit"]
     return scales.index(scale) if scale in scales else 0
+
+
+def _style_option_index(
+    options: tuple[tuple[str, str], ...],
+    value: str | None,
+    *,
+    default: str,
+) -> int:
+    normalized = value if value is not None else default
+    values = [option_value for option_value, _label in options]
+    return values.index(normalized) if normalized in values else values.index(default)
+
+
+def _style_option_label(options: tuple[tuple[str, str], ...], value: str) -> str:
+    return next(label for option_value, label in options if option_value == value)
 
 
 def _limit_bound_text(limits: tuple[float, float] | None, index: int) -> str:
