@@ -31,6 +31,9 @@ def main() -> None:
             background: #f7f8fa;
             color: #17202f;
         }
+        :root {
+            color-scheme: light;
+        }
         header[data-testid="stHeader"] {
             background: transparent;
         }
@@ -48,8 +51,12 @@ def main() -> None:
         [data-testid="stCaptionContainer"] {
             font-size: 0.72rem;
         }
-        [data-testid="stExpander"] details {
-            border-radius: 5px;
+        [data-testid="stExpander"] details,
+        [data-testid="stExpander"] summary {
+            background: #ffffff !important;
+            color: #17202f !important;
+            border-color: #d9dee7 !important;
+            border-radius: 5px !important;
         }
         [data-testid="stPopover"] button,
         div.stButton > button,
@@ -85,6 +92,28 @@ def main() -> None:
         [data-testid="stMarkdownContainer"] p {
             margin-bottom: 0.15rem;
         }
+        [data-baseweb="popover"],
+        [data-baseweb="popover"] > div,
+        [data-baseweb="popover"] [role="dialog"],
+        [data-baseweb="popover"] [role="tooltip"] {
+            background: #ffffff !important;
+            color: #17202f !important;
+            border-color: #d9dee7 !important;
+        }
+        [data-baseweb="popover"] label,
+        [data-baseweb="popover"] p,
+        [data-baseweb="popover"] span,
+        [data-baseweb="popover"] div {
+            color: #17202f !important;
+        }
+        [data-baseweb="popover"] input,
+        [data-baseweb="select"] > div,
+        [data-testid="stNumberInput"] input,
+        [data-testid="stTextInput"] input {
+            background: #ffffff !important;
+            color: #17202f !important;
+            border-color: #b7c0ce !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -103,7 +132,7 @@ def main() -> None:
         st.error(f"Unable to scan project: {exc}")
         return
 
-    _render_metadata_editor(project_root, records, manifest)
+    _render_metadata_editor(project_root, records, manifest, _selected_plot_id_from_query())
     components.html(_render_browser(records), height=900, scrolling=True)
 
 
@@ -275,6 +304,27 @@ def _render_browser(records: list[PlotRecord]) -> str:
             .badge.good {{ color: var(--good); border-color: #9cc9b4; }}
             .badge.warn {{ color: var(--warn); border-color: #d8b56f; }}
             .badge.bad {{ color: var(--bad); border-color: #d8a3a3; }}
+            .card-actions {{
+              display: flex;
+              justify-content: flex-end;
+              margin-top: 7px;
+            }}
+            .setup-button {{
+              display: inline-flex;
+              align-items: center;
+              text-decoration: none;
+              border: 1px solid var(--line-strong);
+              border-radius: 3px;
+              padding: 3px 7px;
+              background: #fff;
+              color: var(--ink);
+              font-size: 11px;
+              line-height: 1.1;
+            }}
+            .setup-button:hover {{
+              border-color: var(--accent);
+              color: var(--accent);
+            }}
             details.card-menu {{
               margin-top: 7px;
               color: var(--muted);
@@ -485,6 +535,9 @@ ${{escapeHtml(record.csv_preview || "No CSV preview")}}</code>
                   <span class="badge ${{record.csv_path ? "good" : "bad"}}">${{record.csv_path ? "CSV matched" : "CSV missing"}}</span>
                   <span class="badge ${{record.confidence === "high" || record.confidence === "exact" ? "good" : "warn"}}">${{record.confidence}}</span>
                 </div>
+                <div class="card-actions">
+                  ${{record.editable ? `<a class="setup-button" target="_blank" rel="noopener" href="/?plot_id=${{encodeURIComponent(record.id)}}#plot-look">Edit setup</a>` : ""}}
+                </div>
               `;
               card.append(image, body);
               return card;
@@ -597,15 +650,17 @@ def _render_metadata_editor(
     project_root: Path,
     records: list[PlotRecord],
     manifest: ProjectManifest,
+    selected_plot_id: str | None,
 ) -> None:
     editable_records = [record for record in records if record.redraw and (record.plot_csv or record.csv)]
     if not editable_records:
         return
 
-    with st.expander("Plot look drawer", expanded=False):
+    with st.expander("Plot look drawer", expanded=selected_plot_id is not None):
         selected_id = st.selectbox(
             "Plot",
             [record.plot_id for record in editable_records],
+            index=_selected_plot_index(editable_records, selected_plot_id),
             format_func=lambda plot_id: _plot_label(editable_records, plot_id),
             label_visibility="collapsed",
         )
@@ -668,8 +723,8 @@ def _save_selected_plot_metadata(
             ylabel=axis_values["ylabel"] or None,
             xscale=axis_values["xscale"],
             yscale=axis_values["yscale"],
-            xlim=_parse_limits(axis_values["xlim"]),
-            ylim=_parse_limits(axis_values["ylim"]),
+            xlim=_parse_limit_bounds(axis_values["x_min"], axis_values["x_max"], "X"),
+            ylim=_parse_limit_bounds(axis_values["y_min"], axis_values["y_max"], "Y"),
             grid=bool(figure_values["grid"]),
             figure={
                 "width_inches": figure_values["width_inches"],
@@ -703,17 +758,27 @@ def _render_axis_popover(record: PlotRecord, redraw: RedrawMetadata) -> dict[str
             index=_scale_index(redraw.yscale),
             key=f"{record.plot_id}_yscale",
         )
-        xlim = st.text_input(
-            "X limits",
-            value=_limits_text(redraw.xlim),
-            placeholder="min,max",
-            key=f"{record.plot_id}_xlim",
+        x_min_col, x_max_col = st.columns(2)
+        x_min = x_min_col.text_input(
+            "X min",
+            value=_limit_bound_text(redraw.xlim, 0),
+            key=f"{record.plot_id}_x_min",
         )
-        ylim = st.text_input(
-            "Y limits",
-            value=_limits_text(redraw.ylim),
-            placeholder="min,max",
-            key=f"{record.plot_id}_ylim",
+        x_max = x_max_col.text_input(
+            "X max",
+            value=_limit_bound_text(redraw.xlim, 1),
+            key=f"{record.plot_id}_x_max",
+        )
+        y_min_col, y_max_col = st.columns(2)
+        y_min = y_min_col.text_input(
+            "Y min",
+            value=_limit_bound_text(redraw.ylim, 0),
+            key=f"{record.plot_id}_y_min",
+        )
+        y_max = y_max_col.text_input(
+            "Y max",
+            value=_limit_bound_text(redraw.ylim, 1),
+            key=f"{record.plot_id}_y_max",
         )
     return {
         "title": title,
@@ -721,8 +786,10 @@ def _render_axis_popover(record: PlotRecord, redraw: RedrawMetadata) -> dict[str
         "ylabel": ylabel,
         "xscale": xscale,
         "yscale": yscale,
-        "xlim": xlim,
-        "ylim": ylim,
+        "x_min": x_min,
+        "x_max": x_max,
+        "y_min": y_min,
+        "y_max": y_max,
     }
 
 
@@ -767,9 +834,9 @@ def _render_series_popover(record: PlotRecord, series: list[SeriesStyle]) -> lis
                     value=style.label or "",
                     key=f"{record.plot_id}_{index}_label",
                 )
-                color = st.text_input(
+                color = st.color_picker(
                     "Color",
-                    value=style.color or "",
+                    value=style.color or "#1f77b4",
                     key=f"{record.plot_id}_{index}_color",
                 )
                 cols = st.columns(3)
@@ -791,12 +858,13 @@ def _render_series_popover(record: PlotRecord, series: list[SeriesStyle]) -> lis
                     value=style.marker if style.marker is not None else "o",
                     key=f"{record.plot_id}_{index}_marker",
                 )
-                alpha = st.slider(
-                    "Alpha",
+                opacity = st.slider(
+                    "Opacity",
                     min_value=0.0,
                     max_value=1.0,
                     value=float(style.alpha if style.alpha is not None else 1.0),
                     step=0.05,
+                    help="Opacity controls transparency. 1.0 is fully opaque; lower values make the line and markers more transparent.",
                     key=f"{record.plot_id}_{index}_alpha",
                 )
                 if y_column:
@@ -808,7 +876,7 @@ def _render_series_popover(record: PlotRecord, series: list[SeriesStyle]) -> lis
                             linewidth=linewidth,
                             linestyle=linestyle or None,
                             marker=marker,
-                            alpha=alpha,
+                            alpha=opacity,
                         )
                     )
     return edited_series
@@ -817,6 +885,22 @@ def _render_series_popover(record: PlotRecord, series: list[SeriesStyle]) -> lis
 def _plot_label(records: list[PlotRecord], plot_id: str) -> str:
     record = next(record for record in records if record.plot_id == plot_id)
     return record.image.relative_path.as_posix()
+
+
+def _selected_plot_index(records: list[PlotRecord], selected_plot_id: str | None) -> int:
+    if selected_plot_id is None:
+        return 0
+    for index, record in enumerate(records):
+        if record.plot_id == selected_plot_id:
+            return index
+    return 0
+
+
+def _selected_plot_id_from_query() -> str | None:
+    value = st.query_params.get("plot_id")
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
 
 
 def _series_for_editor(record: PlotRecord) -> list[SeriesStyle]:
@@ -842,20 +926,24 @@ def _scale_index(scale: str) -> int:
     return scales.index(scale) if scale in scales else 0
 
 
-def _limits_text(limits: tuple[float, float] | None) -> str:
+def _limit_bound_text(limits: tuple[float, float] | None, index: int) -> str:
     if limits is None:
         return ""
-    return f"{limits[0]},{limits[1]}"
+    return str(limits[index])
 
 
-def _parse_limits(value: str) -> tuple[float, float] | None:
-    stripped = value.strip()
-    if not stripped:
+def _parse_limit_bounds(min_value: str, max_value: str, label: str) -> tuple[float, float] | None:
+    stripped_min = min_value.strip()
+    stripped_max = max_value.strip()
+    if not stripped_min and not stripped_max:
         return None
-    parts = [part.strip() for part in stripped.split(",")]
-    if len(parts) != 2:
-        raise ValueError("Limits must be blank or formatted as min,max.")
-    return float(parts[0]), float(parts[1])
+    if not stripped_min or not stripped_max:
+        raise ValueError(f"{label} limits need both min and max, or both fields blank.")
+    parsed_min = float(stripped_min)
+    parsed_max = float(stripped_max)
+    if parsed_min >= parsed_max:
+        raise ValueError(f"{label} min must be less than {label} max.")
+    return parsed_min, parsed_max
 
 
 if __name__ == "__main__":
