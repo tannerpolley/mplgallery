@@ -36,6 +36,12 @@ dev = [
 [project.scripts]
 mplgallery = "mplgallery.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/mplgallery"]
+artifacts = [
+  "src/mplgallery/ui/frontend/dist/**",
+]
+
 [tool.ruff]
 line-length = 100
 
