@@ -23,6 +23,8 @@ Matplotlib-generated PNG/SVG plots associated with CSV data files.
 
 ## Engineering Rules
 
+- Use `uv` as the primary Python package and environment manager for local
+  development.
 - Use a `src/` package layout.
 - Keep business logic separate from Streamlit UI code.
 - Prefer small modules with unit tests.
@@ -39,15 +41,15 @@ Matplotlib-generated PNG/SVG plots associated with CSV data files.
 Run these before considering a task complete:
 
 ```bash
-python -m pytest
-python -m ruff check .
+uv run pytest
+uv run ruff check .
 ```
 
 Use this for local development:
 
 ```bash
-python -m pip install -e ".[dev]"
-mplgallery serve examples/sample_project
+uv sync --dev
+uv run mplgallery serve examples/sample_project
 ```
 
 ## First Milestone Scope

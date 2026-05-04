@@ -30,7 +30,7 @@ mplgallery scan /path/to/project
 ## Development
 
 ```bash
-python -m pip install -e ".[dev]"
-python -m pytest
-python -m ruff check .
+uv sync --dev
+uv run pytest
+uv run ruff check .
 ```

@@ -182,12 +182,13 @@ Milestone 1:
 
 Do not implement the full Streamlit UI, DVC integration, MLflow integration, recipe rendering, or plot editing yet. Create placeholders where useful, but keep the first implementation small and testable.
 
-After implementing, run:
+After implementing, use `uv` as the primary Python package and environment
+manager. Run:
 
 ```bash
-python -m pip install -e ".[dev]"
-python -m pytest
-python -m ruff check .
+uv sync --dev
+uv run pytest
+uv run ruff check .
 ```
 
 If a command fails, fix the cause when it is reasonable. If a dependency or environment issue prevents completion, document the exact failure.
@@ -299,7 +300,7 @@ dependencies = [
   "dvc>=3.0"
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
   "pytest>=8.0",
   "ruff>=0.5",
@@ -367,15 +368,15 @@ Build `mplgallery`, an installable Python package that provides a local Streamli
 Run these before considering a task complete:
 
 ```bash
-python -m pytest
-python -m ruff check .
+uv run pytest
+uv run ruff check .
 ```
 
 Use this for local development:
 
 ```bash
-python -m pip install -e ".[dev]"
-mplgallery serve examples/sample_project
+uv sync --dev
+uv run mplgallery serve examples/sample_project
 ```
 
 ## First Milestone Scope
@@ -1264,8 +1265,8 @@ Deliverables:
 Acceptance:
 
 ```bash
-python -m pip install -e ".[dev]"
-python -c "import mplgallery; print(mplgallery.__version__)"
+uv sync --dev
+uv run python -c "import mplgallery; print(mplgallery.__version__)"
 ```
 
 ### Milestone 1 — Scanner and Association Core
@@ -1283,8 +1284,8 @@ Deliverables:
 Acceptance:
 
 ```bash
-python -m pytest tests/test_scanner.py tests/test_associations.py
-mplgallery scan examples/sample_project
+uv run pytest tests/test_scanner.py tests/test_associations.py
+uv run mplgallery scan examples/sample_project
 ```
 
 ### Milestone 2 — Basic Streamlit Gallery
@@ -1609,9 +1610,9 @@ mplgallery scan /path/to/project
 ## Development
 
 ```bash
-python -m pip install -e ".[dev]"
-python -m pytest
-python -m ruff check .
+uv sync --dev
+uv run pytest
+uv run ruff check .
 ```
 ````
 ---
@@ -1675,8 +1676,8 @@ Constraints:
 Run:
 
 ```bash
-python -m pytest
-python -m ruff check .
+uv run pytest
+uv run ruff check .
 ```
 
 Summarize files changed and limitations.
