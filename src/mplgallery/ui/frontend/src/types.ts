@@ -25,6 +25,15 @@ export type RedrawMetadata = {
     constrained_layout?: boolean;
   };
   series?: SeriesStyle[];
+  subplots?: SubplotMetadata[];
+  subplot_rows?: number;
+  subplot_cols?: number;
+  sharex?: boolean;
+  sharey?: boolean;
+};
+
+export type SubplotMetadata = Omit<RedrawMetadata, "figure" | "subplots" | "subplot_rows" | "subplot_cols" | "sharex" | "sharey"> & {
+  subplot_id: string;
 };
 
 export type SeriesStyle = {
@@ -59,6 +68,13 @@ export type PlotRecord = {
   editable: boolean;
   redraw: RedrawMetadata;
   series: SeriesStyle[];
+  axisDefaults?: AxisDefaults;
+};
+
+export type AxisDefaults = {
+  x?: [number, number] | null;
+  y?: [number, number] | null;
+  subplots?: Record<string, { x?: [number, number] | null; y?: [number, number] | null }>;
 };
 
 export type SelectOption = {

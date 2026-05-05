@@ -1,4 +1,4 @@
-import type { PlotRecord, RedrawMetadata, SeriesStyle, TreeNode } from "./types";
+import type { PlotRecord, RedrawMetadata, SeriesStyle, SubplotMetadata, TreeNode } from "./types";
 
 export function foldersFor(record: PlotRecord): string[] {
   const parts = record.imagePath.split("/");
@@ -80,6 +80,35 @@ export function normalizeRedraw(redraw: RedrawMetadata, series: SeriesStyle[]): 
       constrained_layout: redraw.figure?.constrained_layout ?? false,
     },
     series: series.filter((style) => style.y.trim()),
+    subplots: redraw.subplots?.map(normalizeSubplot) ?? [],
+    subplot_rows: redraw.subplot_rows,
+    subplot_cols: redraw.subplot_cols,
+    sharex: redraw.sharex ?? false,
+    sharey: redraw.sharey ?? false,
+  };
+}
+
+function normalizeSubplot(subplot: SubplotMetadata): SubplotMetadata {
+  return {
+    subplot_id: subplot.subplot_id,
+    kind: subplot.kind ?? "line",
+    x: subplot.x,
+    title: emptyToUndefined(subplot.title),
+    xlabel: emptyToUndefined(subplot.xlabel),
+    xlabel_unit: emptyToUndefined(subplot.xlabel_unit),
+    ylabel: emptyToUndefined(subplot.ylabel),
+    ylabel_unit: emptyToUndefined(subplot.ylabel_unit),
+    xscale: subplot.xscale ?? "linear",
+    yscale: subplot.yscale ?? "linear",
+    xlim: subplot.xlim ?? null,
+    ylim: subplot.ylim ?? null,
+    grid: subplot.grid ?? true,
+    grid_axis: subplot.grid_axis ?? "both",
+    grid_alpha: subplot.grid_alpha ?? 0.25,
+    legend_title: emptyToUndefined(subplot.legend_title),
+    legend_location: subplot.legend_location ?? "best",
+    bins: subplot.bins ?? undefined,
+    series: subplot.series?.filter((style) => style.y.trim()) ?? [],
   };
 }
 

@@ -157,6 +157,50 @@ def test_render_cached_plot_reuses_fresh_preview_cache(tmp_path: Path, monkeypat
     assert image_path.read_text() == "original image"
 
 
+def test_render_cached_plot_invalidates_cache_when_redraw_metadata_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    touch(tmp_path / "plots" / "alpha.png", "original image")
+    data_path = tmp_path / "data" / "alpha.csv"
+    data_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"time_s": [0, 1, 2], "signal": [1.0, 1.5, 2.0]}).to_csv(data_path, index=False)
+    manifest = ProjectManifest.from_mapping(
+        {
+            "records": [
+                {
+                    "plot_path": "plots/alpha.png",
+                    "csv_path": "data/alpha.csv",
+                    "redraw": {"x": "time_s", "title": "Original", "series": [{"y": "signal"}]},
+                }
+            ]
+        }
+    )
+    [record] = build_plot_records(scan_project(tmp_path), manifest=manifest)
+    rendered = render_cached_plot(tmp_path, record)
+    assert rendered.cache is not None
+    assert rendered.cache.redraw_fingerprint is not None
+    assert record.redraw is not None
+
+    changed_record = record.model_copy(update={"redraw": record.redraw.model_copy(update={"title": "Changed"})})
+    did_render = False
+
+    def render_stub(*_args: object, **_kwargs: object) -> tuple[plt.Figure, plt.Axes]:
+        nonlocal did_render
+        did_render = True
+        fig, ax = plt.subplots()
+        ax.plot([0, 1], [0, 1])
+        return fig, ax
+
+    monkeypatch.setattr("mplgallery.core.renderer.render_matplotlib_figure", render_stub)
+    rerendered = render_cached_plot(tmp_path, changed_record)
+
+    assert did_render is True
+    assert rerendered.cache is not None
+    assert rerendered.cache.redraw_fingerprint is not None
+    assert rerendered.cache.redraw_fingerprint != rendered.cache.redraw_fingerprint
+
+
 def test_render_matplotlib_figure_applies_axes_figure_grid_and_series_styles() -> None:
     frame = pd.DataFrame({"time_s": [1.0, 2.0, 3.0], "signal": [2.0, 4.0, 8.0]})
     redraw = RedrawMetadata(
@@ -248,6 +292,58 @@ def test_render_matplotlib_figure_applies_bar_style_controls() -> None:
         assert patch.get_width() == pytest.approx(0.5)
         assert ax.xaxis._major_tick_kw["gridOn"] is False
         assert ax.yaxis._major_tick_kw["gridOn"] is True
+    finally:
+        plt.close(fig)
+
+
+def test_render_matplotlib_figure_supports_shared_subplot_figure() -> None:
+    frame = pd.DataFrame(
+        {
+            "time_s": [0, 1, 2, 3],
+            "response": [0.0, 0.8, 0.2, -0.1],
+            "fit": [0.1, 0.7, 0.25, -0.05],
+            "residual": [0.1, 0.1, 0.05, 0.05],
+        }
+    )
+    redraw = RedrawMetadata(
+        title="Shared figure",
+        subplot_rows=2,
+        subplot_cols=1,
+        sharex=True,
+        figure={"width_inches": 6.0, "height_inches": 5.0, "dpi": 120},
+        subplots=[
+            {
+                "subplot_id": "response",
+                "kind": "line",
+                "x": "time_s",
+                "title": "Response",
+                "series": [
+                    {"y": "response", "label": "Response", "color": "#1f77b4"},
+                    {"y": "fit", "label": "Fit", "color": "#d62728", "linestyle": "--"},
+                ],
+            },
+            {
+                "subplot_id": "residual",
+                "kind": "bar",
+                "x": "time_s",
+                "title": "Residual",
+                "grid_axis": "y",
+                "series": [{"y": "residual", "label": "Residual", "color": "#2ca02c"}],
+            },
+        ],
+    )
+
+    fig, ax = render_matplotlib_figure(frame, redraw, fallback_title="Fallback")
+    try:
+        visible_axes = [axis for axis in fig.axes if axis.get_visible()]
+        assert ax is visible_axes[0]
+        assert len(visible_axes) == 2
+        assert fig._suptitle is not None
+        assert fig._suptitle.get_text() == "Shared figure"
+        assert visible_axes[0].get_title() == "Response"
+        assert len(visible_axes[0].get_lines()) == 2
+        assert visible_axes[1].get_title() == "Residual"
+        assert len(visible_axes[1].patches) == 4
     finally:
         plt.close(fig)
 

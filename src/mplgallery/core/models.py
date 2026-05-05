@@ -57,6 +57,29 @@ class SeriesStyle(BaseModel):
     zorder: float | None = None
 
 
+class SubplotMetadata(BaseModel):
+    subplot_id: str
+    title: str | None = None
+    kind: str = "line"
+    x: str | None = None
+    y: list[str] = Field(default_factory=list)
+    xlabel: str | None = None
+    xlabel_unit: str | None = None
+    ylabel: str | None = None
+    ylabel_unit: str | None = None
+    xscale: str = "linear"
+    yscale: str = "linear"
+    xlim: tuple[float, float] | None = None
+    ylim: tuple[float, float] | None = None
+    grid: bool = True
+    grid_axis: str | None = None
+    grid_alpha: float | None = None
+    legend_title: str | None = None
+    legend_location: str | None = None
+    bins: int | None = None
+    series: list[SeriesStyle] = Field(default_factory=list)
+
+
 class RedrawMetadata(BaseModel):
     kind: str = "line"
     x: str | None = None
@@ -78,12 +101,18 @@ class RedrawMetadata(BaseModel):
     bins: int | None = None
     figure: MatplotlibFigureAttributes = Field(default_factory=MatplotlibFigureAttributes)
     series: list[SeriesStyle] = Field(default_factory=list)
+    subplots: list[SubplotMetadata] = Field(default_factory=list)
+    subplot_rows: int | None = None
+    subplot_cols: int | None = None
+    sharex: bool = False
+    sharey: bool = False
 
 
 class CacheMetadata(BaseModel):
     cache_path: Path | None = None
     source_size_bytes: int | None = None
     source_modified_at: datetime | None = None
+    redraw_fingerprint: str | None = None
     render_error: str | None = None
 
 

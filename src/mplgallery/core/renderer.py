@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import matplotlib
@@ -10,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from mplgallery.core.models import CacheMetadata, PlotRecord, RedrawMetadata, SeriesStyle
+from mplgallery.core.models import CacheMetadata, PlotRecord, RedrawMetadata, SeriesStyle, SubplotMetadata
 
 DEFAULT_COLOR_CYCLE = (
     "#1f77b4",
@@ -77,16 +79,19 @@ def render_cached_plot(project_root: Path | str, record: PlotRecord) -> PlotReco
         cache_path = _cache_path_for_record(root, record)
         fig.tight_layout()
         fig.savefig(cache_path)
+        _write_cache_metadata(cache_path, record)
     finally:
         plt.close(fig)
 
     csv_stat = source_csv.path.stat()
+    redraw_fingerprint = _redraw_fingerprint(record)
     return record.model_copy(
         update={
             "cache": CacheMetadata(
                 cache_path=cache_path,
                 source_size_bytes=csv_stat.st_size,
                 source_modified_at=source_csv.modified_at,
+                redraw_fingerprint=redraw_fingerprint,
             )
         }
     )
@@ -107,6 +112,11 @@ def record_with_fresh_cache(project_root: Path | str, record: PlotRecord) -> Plo
     cache_stat = cache_path.stat()
     if cache_stat.st_mtime < csv_stat.st_mtime:
         return None
+    redraw_fingerprint = _redraw_fingerprint(record)
+    if redraw_fingerprint is not None:
+        cache_metadata = _read_cache_metadata(cache_path)
+        if cache_metadata.get("redraw_fingerprint") != redraw_fingerprint:
+            return None
 
     return record.model_copy(
         update={
@@ -114,6 +124,7 @@ def record_with_fresh_cache(project_root: Path | str, record: PlotRecord) -> Plo
                 cache_path=cache_path,
                 source_size_bytes=csv_stat.st_size,
                 source_modified_at=source_csv.modified_at,
+                redraw_fingerprint=redraw_fingerprint,
             )
         }
     )
@@ -122,6 +133,37 @@ def record_with_fresh_cache(project_root: Path | str, record: PlotRecord) -> Plo
 def _cache_path_for_record(project_root: Path, record: PlotRecord) -> Path:
     cache_suffix = record.image.suffix.lower() if record.image.suffix.lower() in {".png", ".svg"} else ".png"
     return project_root / ".mplgallery" / "cache" / f"{record.plot_id}{cache_suffix}"
+
+
+def _cache_metadata_path(cache_path: Path) -> Path:
+    return cache_path.with_name(f"{cache_path.name}.meta.json")
+
+
+def _redraw_fingerprint(record: PlotRecord) -> str | None:
+    if record.redraw is None:
+        return None
+    payload = record.redraw.model_dump(mode="json", exclude_none=True)
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _read_cache_metadata(cache_path: Path) -> dict[str, object]:
+    metadata_path = _cache_metadata_path(cache_path)
+    if not metadata_path.exists():
+        return {}
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_cache_metadata(cache_path: Path, record: PlotRecord) -> None:
+    metadata_path = _cache_metadata_path(cache_path)
+    metadata_path.write_text(
+        json.dumps({"redraw_fingerprint": _redraw_fingerprint(record)}, sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 def render_matplotlib_figure(
@@ -133,6 +175,9 @@ def render_matplotlib_figure(
     """Build a Matplotlib figure from CSV data and manifest metadata."""
     if frame.empty:
         raise ValueError("CSV data is empty")
+    if redraw.subplots:
+        return _render_subplot_figure(frame, redraw, fallback_title=fallback_title)
+
     x_column = redraw.x or frame.columns[0]
     series = _series_from_metadata(frame, redraw, x_column)
     if not series:
@@ -147,71 +192,124 @@ def render_matplotlib_figure(
     )
 
     try:
-        kind = redraw.kind if redraw.kind in PLOT_KIND_CHOICES else "line"
-        if kind == "hist":
-            _render_histogram(ax, frame, series, redraw)
-        elif kind == "bar":
-            _render_bar(ax, frame, series[0], x_column, horizontal=False)
-        elif kind == "barh":
-            _render_bar(ax, frame, series[0], x_column, horizontal=True)
-        elif kind == "area":
-            _render_area(ax, frame, series[0], x_column)
-        elif kind == "step":
-            _render_step(ax, frame, series, x_column)
-        else:
-            for style in series:
-                label = style.label or style.y
-                if kind == "scatter":
-                    ax.scatter(
-                        frame[x_column],
-                        frame[style.y],
-                        label=label,
-                        color=style.color,
-                        edgecolors=style.edgecolor,
-                        marker=style.marker,
-                        s=(style.markersize or 6) ** 2,
-                        alpha=style.alpha,
-                        zorder=style.zorder,
-                    )
-                else:
-                    ax.plot(
-                        frame[x_column],
-                        frame[style.y],
-                        label=label,
-                        color=style.color,
-                        linewidth=style.linewidth,
-                        linestyle=style.linestyle,
-                        marker=style.marker if style.marker is not None else "o",
-                        markersize=style.markersize or 3,
-                        alpha=style.alpha,
-                        zorder=style.zorder,
-                    )
-
-        ax.set_title(redraw.title or fallback_title)
-        ax.set_xlabel(_compose_axis_label(redraw.xlabel or x_column, redraw.xlabel_unit))
-        ax.set_ylabel(_compose_axis_label(redraw.ylabel or ", ".join(style.y for style in series), redraw.ylabel_unit))
-        ax.set_xscale(redraw.xscale)
-        ax.set_yscale(redraw.yscale)
-        if redraw.xlim is not None:
-            ax.set_xlim(redraw.xlim)
-        if redraw.ylim is not None:
-            ax.set_ylim(redraw.ylim)
-        ax.grid(
-            redraw.grid,
-            axis=redraw.grid_axis or "both",
-            alpha=redraw.grid_alpha if redraw.grid_alpha is not None else 0.25,
-        )
-        if len(series) > 1 or any(style.label for style in series):
-            ax.legend(title=redraw.legend_title or None, loc=redraw.legend_location or "best")
+        _render_axes(ax, frame, redraw, fallback_title=fallback_title)
     except Exception:
         plt.close(fig)
         raise
     return fig, ax
 
 
-def _series_from_metadata(
+def _render_subplot_figure(
     frame: pd.DataFrame,
     redraw: RedrawMetadata,
+    *,
+    fallback_title: str,
+) -> tuple[plt.Figure, plt.Axes]:
+    figure = redraw.figure
+    subplot_count = len(redraw.subplots)
+    rows = redraw.subplot_rows or subplot_count
+    cols = redraw.subplot_cols or 1
+    if rows * cols < subplot_count:
+        rows = subplot_count
+        cols = 1
+
+    fig, axes = plt.subplots(
+        rows,
+        cols,
+        figsize=(figure.width_inches, figure.height_inches),
+        dpi=figure.dpi,
+        facecolor=figure.facecolor,
+        constrained_layout=bool(figure.constrained_layout) if figure.constrained_layout is not None else False,
+        sharex=redraw.sharex,
+        sharey=redraw.sharey,
+    )
+    axes_list = list(axes.flat) if hasattr(axes, "flat") else [axes]
+    try:
+        for ax, subplot in zip(axes_list, redraw.subplots, strict=False):
+            _render_axes(ax, frame, subplot, fallback_title=subplot.title or subplot.subplot_id)
+        for ax in axes_list[subplot_count:]:
+            ax.set_visible(False)
+        if redraw.title:
+            fig.suptitle(redraw.title)
+    except Exception:
+        plt.close(fig)
+        raise
+    return fig, axes_list[0]
+
+
+def _render_axes(
+    ax: plt.Axes,
+    frame: pd.DataFrame,
+    metadata: RedrawMetadata | SubplotMetadata,
+    *,
+    fallback_title: str,
+) -> None:
+    x_column = metadata.x or frame.columns[0]
+    series = _series_from_metadata(frame, metadata, x_column)
+    if not series:
+        raise ValueError("No y columns configured for redraw")
+
+    kind = metadata.kind if metadata.kind in PLOT_KIND_CHOICES else "line"
+    if kind == "hist":
+        _render_histogram(ax, frame, series, metadata)
+    elif kind == "bar":
+        _render_bar(ax, frame, series[0], x_column, horizontal=False)
+    elif kind == "barh":
+        _render_bar(ax, frame, series[0], x_column, horizontal=True)
+    elif kind == "area":
+        _render_area(ax, frame, series[0], x_column)
+    elif kind == "step":
+        _render_step(ax, frame, series, x_column)
+    else:
+        for style in series:
+            label = style.label or style.y
+            if kind == "scatter":
+                ax.scatter(
+                    frame[x_column],
+                    frame[style.y],
+                    label=label,
+                    color=style.color,
+                    edgecolors=style.edgecolor,
+                    marker=style.marker,
+                    s=(style.markersize or 6) ** 2,
+                    alpha=style.alpha,
+                    zorder=style.zorder,
+                )
+            else:
+                ax.plot(
+                    frame[x_column],
+                    frame[style.y],
+                    label=label,
+                    color=style.color,
+                    linewidth=style.linewidth,
+                    linestyle=style.linestyle,
+                    marker=style.marker if style.marker is not None else "o",
+                    markersize=style.markersize or 3,
+                    alpha=style.alpha,
+                    zorder=style.zorder,
+                )
+
+    ax.set_title(metadata.title or fallback_title)
+    ax.set_xlabel(_compose_axis_label(metadata.xlabel or x_column, metadata.xlabel_unit))
+    ax.set_ylabel(_compose_axis_label(metadata.ylabel or ", ".join(style.y for style in series), metadata.ylabel_unit))
+    ax.set_xscale(metadata.xscale)
+    ax.set_yscale(metadata.yscale)
+    if metadata.xlim is not None:
+        ax.set_xlim(metadata.xlim)
+    if metadata.ylim is not None:
+        ax.set_ylim(metadata.ylim)
+    ax.grid(
+        metadata.grid,
+        axis=metadata.grid_axis or "both",
+        alpha=metadata.grid_alpha if metadata.grid_alpha is not None else 0.25,
+    )
+    if len(series) > 1 or any(style.label for style in series):
+        ax.legend(title=metadata.legend_title or None, loc=metadata.legend_location or "best")
+
+
+def _series_from_metadata(
+    frame: pd.DataFrame,
+    redraw: RedrawMetadata | SubplotMetadata,
     x_column: str,
 ) -> list[SeriesStyle]:
     if redraw.series:
@@ -233,7 +331,7 @@ def _render_histogram(
     ax: plt.Axes,
     frame: pd.DataFrame,
     series: list[SeriesStyle],
-    redraw: RedrawMetadata,
+    redraw: RedrawMetadata | SubplotMetadata,
 ) -> None:
     columns = [style.y for style in series]
     hist_frame = frame[columns]

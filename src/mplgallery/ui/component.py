@@ -190,6 +190,7 @@ def _record_payload(record: PlotRecord) -> dict[str, Any]:
         "renderError": record.cache.render_error if record.cache else None,
         "csvPreview": _csv_preview(record),
         "csvColumns": _csv_columns(record),
+        "axisDefaults": _axis_defaults(record),
         "editable": bool(record.redraw and source_csv),
         "redraw": redraw.model_dump(mode="json", exclude_none=True),
         "series": [style.model_dump(mode="json", exclude_none=True) for style in _series_for_editor(record)],
@@ -227,6 +228,57 @@ def _csv_columns(record: PlotRecord) -> list[str]:
     except Exception:
         return []
     return [str(column) for column in frame.columns]
+
+
+def _axis_defaults(record: PlotRecord) -> dict[str, Any]:
+    source_csv = record.plot_csv or record.csv
+    if source_csv is None or record.redraw is None:
+        return {"x": None, "y": None, "subplots": {}}
+    try:
+        frame = pd.read_csv(source_csv.path)
+    except Exception:
+        return {"x": None, "y": None, "subplots": {}}
+
+    top_level = _limits_for_metadata(frame, record.redraw, _series_for_editor(record))
+    subplots = {
+        subplot.subplot_id: _limits_for_metadata(frame, subplot, subplot.series)
+        for subplot in record.redraw.subplots
+    }
+    return {"x": top_level["x"], "y": top_level["y"], "subplots": subplots}
+
+
+def _limits_for_metadata(
+    frame: pd.DataFrame,
+    metadata: Any,
+    series: list[SeriesStyle],
+) -> dict[str, tuple[float, float] | None]:
+    if frame.empty:
+        return {"x": None, "y": None}
+    x_column = metadata.x or frame.columns[0]
+    y_columns = [style.y for style in series] or list(getattr(metadata, "y", []) or [])
+    return {
+        "x": _numeric_limits(frame, [x_column]),
+        "y": _numeric_limits(frame, y_columns),
+    }
+
+
+def _numeric_limits(frame: pd.DataFrame, columns: list[str]) -> tuple[float, float] | None:
+    values: list[float] = []
+    for column in columns:
+        if column not in frame.columns:
+            continue
+        numeric = pd.to_numeric(frame[column], errors="coerce").dropna()
+        if numeric.empty:
+            continue
+        values.extend([float(numeric.min()), float(numeric.max())])
+    if not values:
+        return None
+    minimum = min(values)
+    maximum = max(values)
+    if minimum == maximum:
+        padding = abs(minimum) * 0.05 or 1.0
+        return (minimum - padding, maximum + padding)
+    return (minimum, maximum)
 
 
 def _series_for_editor(record: PlotRecord) -> list[SeriesStyle]:

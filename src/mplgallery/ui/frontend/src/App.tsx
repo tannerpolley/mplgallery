@@ -7,7 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Streamlit } from "streamlit-component-lib";
-import type { BrowserPayload, PlotRecord, RedrawMetadata, SeriesStyle, TreeNode } from "./types";
+import type { BrowserPayload, PlotRecord, RedrawMetadata, SeriesStyle, SubplotMetadata, TreeNode } from "./types";
 import { buildTree, clampNumber, eventId, filterRecords, foldersFor, normalizeRedraw, parseLimits } from "./utils";
 import "./App.css";
 
@@ -517,11 +517,13 @@ function Inspector({
 }) {
   const [redraw, setRedraw] = useState<RedrawMetadata>({});
   const [series, setSeries] = useState<SeriesStyle[]>([]);
+  const [activeSubplotId, setActiveSubplotId] = useState("");
   const [localError, setLocalError] = useState("");
 
   useEffect(() => {
     setRedraw(record?.redraw ?? {});
     setSeries(record?.series ?? []);
+    setActiveSubplotId(record?.redraw.subplots?.[0]?.subplot_id ?? "");
     setLocalError("");
   }, [record]);
 
@@ -534,10 +536,18 @@ function Inspector({
     );
   }
 
-  const xlim = redraw.xlim ?? null;
-  const ylim = redraw.ylim ?? null;
+  const subplots = redraw.subplots ?? [];
+  const hasSubplots = subplots.length > 0;
+  const activeSubplot = subplots.find((subplot) => subplot.subplot_id === activeSubplotId) ?? subplots[0] ?? null;
+  const editableRedraw = activeSubplot ?? redraw;
+  const editableSeries = activeSubplot ? activeSubplot.series ?? [] : series;
+  const activeDefaults = activeSubplot
+    ? record.axisDefaults?.subplots?.[activeSubplot.subplot_id]
+    : record.axisDefaults;
+  const xlim = editableRedraw.xlim ?? null;
+  const ylim = editableRedraw.ylim ?? null;
   const figure = redraw.figure ?? {};
-  const plotKind = redraw.kind ?? "line";
+  const plotKind = editableRedraw.kind ?? "line";
   const supportsLine = ["line", "step", "area"].includes(plotKind);
   const supportsMarker = ["line", "scatter"].includes(plotKind);
   const supportsHatch = ["bar", "barh", "hist"].includes(plotKind);
@@ -549,8 +559,37 @@ function Inspector({
     setRedraw((current) => ({ ...current, ...patch }));
   }
 
+  function updateEditableRedraw(patch: Partial<SubplotMetadata & RedrawMetadata>) {
+    if (!activeSubplot) {
+      setRedraw((current) => ({ ...current, ...patch }));
+      return;
+    }
+    setRedraw((current) => ({
+      ...current,
+      subplots: (current.subplots ?? []).map((subplot) =>
+        subplot.subplot_id === activeSubplot.subplot_id ? { ...subplot, ...patch } : subplot,
+      ),
+    }));
+  }
+
   function updateSeries(index: number, patch: Partial<SeriesStyle>) {
-    setSeries((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+    if (!activeSubplot) {
+      setSeries((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+      return;
+    }
+    setRedraw((current) => ({
+      ...current,
+      subplots: (current.subplots ?? []).map((subplot) =>
+        subplot.subplot_id === activeSubplot.subplot_id
+          ? {
+              ...subplot,
+              series: (subplot.series ?? []).map((item, itemIndex) =>
+                itemIndex === index ? { ...item, ...patch } : item,
+              ),
+            }
+          : subplot,
+      ),
+    }));
   }
 
   function save() {
@@ -579,11 +618,35 @@ function Inspector({
         </div>
       ) : null}
 
+      {hasSubplots ? (
+        <details open>
+          <summary>Subplots</summary>
+          <div className="mg-subplot-tabs" role="tablist" aria-label="Subplot panels">
+            {subplots.map((subplot, index) => (
+              <button
+                key={subplot.subplot_id}
+                type="button"
+                role="tab"
+                aria-selected={subplot.subplot_id === activeSubplot?.subplot_id}
+                className={subplot.subplot_id === activeSubplot?.subplot_id ? "is-active" : ""}
+                onClick={() => setActiveSubplotId(subplot.subplot_id)}
+              >
+                {subplot.title || `Panel ${index + 1}`}
+              </button>
+            ))}
+          </div>
+          <p className="mg-help">Editing one axes panel inside the same Matplotlib figure object.</p>
+        </details>
+      ) : null}
+
       <details open>
         <summary>Axes</summary>
         <label>
           Plot type
-          <select value={redraw.kind ?? "line"} onChange={(event) => updateRedraw({ kind: event.target.value })}>
+          <select
+            value={editableRedraw.kind ?? "line"}
+            onChange={(event) => updateEditableRedraw({ kind: event.target.value })}
+          >
             {payload.options.plotKinds.map((kind) => (
               <option key={kind} value={kind}>
                 {kind}
@@ -593,18 +656,24 @@ function Inspector({
         </label>
         <label>
           Title
-          <input value={redraw.title ?? ""} onChange={(event) => updateRedraw({ title: event.target.value })} />
+          <input
+            value={editableRedraw.title ?? ""}
+            onChange={(event) => updateEditableRedraw({ title: event.target.value })}
+          />
         </label>
         <div className="mg-field-grid two">
           <label>
             X label
-            <input value={redraw.xlabel ?? ""} onChange={(event) => updateRedraw({ xlabel: event.target.value })} />
+            <input
+              value={editableRedraw.xlabel ?? ""}
+              onChange={(event) => updateEditableRedraw({ xlabel: event.target.value })}
+            />
           </label>
           <label>
             X unit
             <select
-              value={redraw.xlabel_unit ?? ""}
-              onChange={(event) => updateRedraw({ xlabel_unit: event.target.value || undefined })}
+              value={editableRedraw.xlabel_unit ?? ""}
+              onChange={(event) => updateEditableRedraw({ xlabel_unit: event.target.value || undefined })}
             >
               <option value="">None</option>
               {payload.options.units.map((unit) => (
@@ -616,13 +685,16 @@ function Inspector({
           </label>
           <label>
             Y label
-            <input value={redraw.ylabel ?? ""} onChange={(event) => updateRedraw({ ylabel: event.target.value })} />
+            <input
+              value={editableRedraw.ylabel ?? ""}
+              onChange={(event) => updateEditableRedraw({ ylabel: event.target.value })}
+            />
           </label>
           <label>
             Y unit
             <select
-              value={redraw.ylabel_unit ?? ""}
-              onChange={(event) => updateRedraw({ ylabel_unit: event.target.value || undefined })}
+              value={editableRedraw.ylabel_unit ?? ""}
+              onChange={(event) => updateEditableRedraw({ ylabel_unit: event.target.value || undefined })}
             >
               <option value="">None</option>
               {payload.options.units.map((unit) => (
@@ -634,7 +706,10 @@ function Inspector({
           </label>
           <label>
             X scale
-            <select value={redraw.xscale ?? "linear"} onChange={(event) => updateRedraw({ xscale: event.target.value })}>
+            <select
+              value={editableRedraw.xscale ?? "linear"}
+              onChange={(event) => updateEditableRedraw({ xscale: event.target.value })}
+            >
               {payload.options.scales.map((scale) => (
                 <option key={scale} value={scale}>
                   {scale}
@@ -644,7 +719,10 @@ function Inspector({
           </label>
           <label>
             Y scale
-            <select value={redraw.yscale ?? "linear"} onChange={(event) => updateRedraw({ yscale: event.target.value })}>
+            <select
+              value={editableRedraw.yscale ?? "linear"}
+              onChange={(event) => updateEditableRedraw({ yscale: event.target.value })}
+            >
               {payload.options.scales.map((scale) => (
                 <option key={scale} value={scale}>
                   {scale}
@@ -656,25 +734,27 @@ function Inspector({
         <LimitEditor
           label="X limits"
           value={xlim}
-          onChange={(value) => updateRedraw({ xlim: value })}
+          defaultValue={activeDefaults?.x ?? null}
+          onChange={(value) => updateEditableRedraw({ xlim: value })}
         />
         <LimitEditor
           label="Y limits"
           value={ylim}
-          onChange={(value) => updateRedraw({ ylim: value })}
+          defaultValue={activeDefaults?.y ?? null}
+          onChange={(value) => updateEditableRedraw({ ylim: value })}
         />
         <label>
           Legend title
           <input
-            value={redraw.legend_title ?? ""}
-            onChange={(event) => updateRedraw({ legend_title: event.target.value })}
+            value={editableRedraw.legend_title ?? ""}
+            onChange={(event) => updateEditableRedraw({ legend_title: event.target.value })}
           />
         </label>
         <label>
           Legend location
           <select
-            value={redraw.legend_location ?? "best"}
-            onChange={(event) => updateRedraw({ legend_location: event.target.value })}
+            value={editableRedraw.legend_location ?? "best"}
+            onChange={(event) => updateEditableRedraw({ legend_location: event.target.value })}
           >
             {payload.options.legendLocations.map((location) => (
               <option key={location} value={location}>
@@ -690,9 +770,9 @@ function Inspector({
               type="number"
               min="1"
               step="1"
-              value={redraw.bins ?? ""}
+              value={editableRedraw.bins ?? ""}
               onChange={(event) =>
-                updateRedraw({ bins: event.target.value ? Number(event.target.value) : undefined })
+                updateEditableRedraw({ bins: event.target.value ? Number(event.target.value) : undefined })
               }
             />
           </label>
@@ -705,8 +785,8 @@ function Inspector({
           <label className="mg-mini-toggle">
             <input
               type="checkbox"
-              checked={redraw.grid ?? true}
-              onChange={(event) => updateRedraw({ grid: event.target.checked })}
+              checked={editableRedraw.grid ?? true}
+              onChange={(event) => updateEditableRedraw({ grid: event.target.checked })}
             />
             <span>Grid</span>
           </label>
@@ -721,13 +801,13 @@ function Inspector({
             <span>Tight layout</span>
           </label>
         </div>
-        {(redraw.grid ?? true) ? (
+        {(editableRedraw.grid ?? true) ? (
           <div className="mg-field-grid two">
             <label>
               Grid axis
               <select
-                value={redraw.grid_axis ?? "both"}
-                onChange={(event) => updateRedraw({ grid_axis: event.target.value })}
+                value={editableRedraw.grid_axis ?? "both"}
+                onChange={(event) => updateEditableRedraw({ grid_axis: event.target.value })}
               >
                 {payload.options.gridAxes.map((axis) => (
                   <option key={axis} value={axis}>
@@ -743,10 +823,10 @@ function Inspector({
                 min="0"
                 max="1"
                 step="0.05"
-                value={redraw.grid_alpha ?? 0.25}
-                onChange={(event) => updateRedraw({ grid_alpha: Number(event.target.value) })}
+                value={editableRedraw.grid_alpha ?? 0.25}
+                onChange={(event) => updateEditableRedraw({ grid_alpha: Number(event.target.value) })}
               />
-              <span className="mg-inline-value">{redraw.grid_alpha ?? 0.25}</span>
+              <span className="mg-inline-value">{editableRedraw.grid_alpha ?? 0.25}</span>
             </label>
           </div>
         ) : null}
@@ -792,7 +872,7 @@ function Inspector({
 
       <details open>
         <summary>Series</summary>
-        {series.map((style, index) => (
+        {editableSeries.map((style, index) => (
           <fieldset key={`${style.y}-${index}`} className="mg-series">
             <legend>{style.label || style.y}</legend>
             <label>
@@ -914,16 +994,18 @@ function Inspector({
                 </label>
               ) : null}
               <label>
-                Layer
+                Draw order
                 <input
                   type="number"
                   step="1"
                   value={style.zorder ?? ""}
                   placeholder="auto"
+                  title="Matplotlib zorder: higher numbers draw on top of lower numbers."
                   onChange={(event) =>
                     updateSeries(index, { zorder: event.target.value ? Number(event.target.value) : undefined })
                   }
                 />
+                <span className="mg-help">Higher draws on top.</span>
               </label>
             </div>
           </fieldset>
@@ -958,7 +1040,9 @@ function VisualPicker({
   kind: "color" | "line" | "marker" | "hatch";
   onChange: (value: string) => void;
 }) {
-  const active = options.find((option) => option.value === value) ?? options[0];
+  const active = options.find((option) => option.value === value) ?? (kind === "color" && value
+    ? { value, label: "Custom color" }
+    : options[0]);
   const label = active?.label ?? "None";
   return (
     <details className={`mg-picker mg-picker-${kind}`}>
@@ -982,6 +1066,17 @@ function VisualPicker({
             <VisualOption value={option.value} label={option.label} kind={kind} compact />
           </button>
         ))}
+        {kind === "color" ? (
+          <label className="mg-picker-option mg-custom-color" title="Choose any color" aria-label="Choose any color">
+            <span aria-hidden="true">+</span>
+            <input
+              type="color"
+              value={value || "#1f77b4"}
+              onChange={(event) => onChange(event.target.value)}
+            />
+            <span className="mg-sr-only">Choose any color</span>
+          </label>
+        ) : null}
       </div>
     </details>
   );
@@ -1041,10 +1136,12 @@ function VisualOption({
 function LimitEditor({
   label,
   value,
+  defaultValue,
   onChange,
 }: {
   label: string;
   value: [number, number] | null;
+  defaultValue?: [number, number] | null;
   onChange: (value: [number, number] | null) => void;
 }) {
   const [minValue, setMinValue] = useState(value?.[0]?.toString() ?? "");
@@ -1067,19 +1164,42 @@ function LimitEditor({
 
   return (
     <div>
-      <div className="mg-label">{label}</div>
+      <div className="mg-limit-head">
+        <div className="mg-label">{label}</div>
+        {defaultValue ? (
+          <button
+            type="button"
+            className="mg-link-button"
+            onClick={() => commit(formatLimit(defaultValue[0]), formatLimit(defaultValue[1]))}
+          >
+            Use data range
+          </button>
+        ) : null}
+      </div>
       <div className="mg-field-grid two">
         <label>
           Min
-          <input value={minValue} onChange={(event) => commit(event.target.value, maxValue)} />
+          <input
+            value={minValue}
+            placeholder={defaultValue ? formatLimit(defaultValue[0]) : "auto"}
+            onChange={(event) => commit(event.target.value, maxValue)}
+          />
         </label>
         <label>
           Max
-          <input value={maxValue} onChange={(event) => commit(minValue, event.target.value)} />
+          <input
+            value={maxValue}
+            placeholder={defaultValue ? formatLimit(defaultValue[1]) : "auto"}
+            onChange={(event) => commit(minValue, event.target.value)}
+          />
         </label>
       </div>
     </div>
   );
+}
+
+function formatLimit(value: number): string {
+  return Number.isInteger(value) ? value.toString() : Number(value.toPrecision(6)).toString();
 }
 
 function lineStyleClass(value: string): string {
