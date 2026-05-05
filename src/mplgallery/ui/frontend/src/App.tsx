@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Streamlit } from "streamlit-component-lib";
 import type { BrowserPayload, PlotRecord, RedrawMetadata, SeriesStyle, TreeNode } from "./types";
-import { buildTree, eventId, filterRecords, normalizeRedraw, parseLimits } from "./utils";
+import { buildTree, clampNumber, eventId, filterRecords, normalizeRedraw, parseLimits } from "./utils";
 import "./App.css";
 
 type StreamlitProps = {
@@ -23,6 +30,18 @@ const emptyPayload: BrowserPayload = {
   errors: {},
 };
 
+const defaultLayout = {
+  treeWidth: 240,
+  inspectorWidth: 340,
+};
+
+const layoutBounds = {
+  treeMin: 170,
+  treeMax: 380,
+  inspectorMin: 280,
+  inspectorMax: 560,
+};
+
 function App(props: StreamlitProps) {
   const payload = props.payload ?? emptyPayload;
   const [selectedPlotId, setSelectedPlotId] = useState<string | null>(
@@ -33,6 +52,7 @@ function App(props: StreamlitProps) {
   const [query, setQuery] = useState("");
   const [tileSize, setTileSize] = useState(230);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [layout, setLayout] = useState(defaultLayout);
 
   useEffect(() => {
     setSelectedPlotId(payload.selectedPlotId ?? payload.records[0]?.id ?? null);
@@ -67,8 +87,81 @@ function App(props: StreamlitProps) {
     });
   }
 
+  function startTreeResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = layout.treeWidth;
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const nextWidth = clampNumber(
+        startWidth + moveEvent.clientX - startX,
+        layoutBounds.treeMin,
+        layoutBounds.treeMax,
+      );
+      setLayout((current) => ({ ...current, treeWidth: nextWidth }));
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      document.body.classList.remove("mg-is-resizing");
+    };
+
+    document.body.classList.add("mg-is-resizing");
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }
+
+  function startInspectorResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = layout.inspectorWidth;
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const nextWidth = clampNumber(
+        startWidth - (moveEvent.clientX - startX),
+        layoutBounds.inspectorMin,
+        layoutBounds.inspectorMax,
+      );
+      setLayout((current) => ({ ...current, inspectorWidth: nextWidth }));
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      document.body.classList.remove("mg-is-resizing");
+    };
+
+    document.body.classList.add("mg-is-resizing");
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }
+
+  function resizeTreeWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const delta = event.key === "ArrowRight" ? 16 : -16;
+    setLayout((current) => ({
+      ...current,
+      treeWidth: clampNumber(current.treeWidth + delta, layoutBounds.treeMin, layoutBounds.treeMax),
+    }));
+  }
+
+  function resizeInspectorWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const delta = event.key === "ArrowLeft" ? 16 : -16;
+    setLayout((current) => ({
+      ...current,
+      inspectorWidth: clampNumber(
+        current.inspectorWidth + delta,
+        layoutBounds.inspectorMin,
+        layoutBounds.inspectorMax,
+      ),
+    }));
+  }
+
+  const shellStyle = {
+    "--tree-width": `${layout.treeWidth}px`,
+    "--inspector-width": `${layout.inspectorWidth}px`,
+  } as CSSProperties;
+
   return (
-    <div className="mg-shell">
+    <div className={`mg-shell ${inspectorOpen ? "" : "is-inspector-closed"}`} style={shellStyle}>
       <aside className="mg-tree-panel" aria-label="Output tree">
         <div className="mg-panel-title">Output tree</div>
         <label className="mg-sr-only" htmlFor="plot-search">
@@ -106,21 +199,38 @@ function App(props: StreamlitProps) {
         />
       </aside>
 
+      <div
+        className="mg-resizer"
+        role="separator"
+        aria-label="Resize output tree"
+        aria-orientation="vertical"
+        aria-valuemin={layoutBounds.treeMin}
+        aria-valuemax={layoutBounds.treeMax}
+        aria-valuenow={layout.treeWidth}
+        tabIndex={0}
+        onKeyDown={resizeTreeWithKeyboard}
+        onPointerDown={startTreeResize}
+      />
+
       <main className="mg-workspace" aria-label="Plot workspace">
         <div className="mg-workspace-header">
           <div>
             <div className="mg-eyebrow">{payload.records.length} indexed plots</div>
             <h2>{selectedRecord?.name ?? "No plot selected"}</h2>
           </div>
-          <button
-            className="mg-inspector-toggle"
-            type="button"
-            onClick={() => setInspectorOpen((open) => !open)}
-          >
-            {inspectorOpen ? "Hide inspector" : "Show inspector"}
-          </button>
+          <div className="mg-header-actions">
+            <button className="mg-inspector-toggle" type="button" onClick={() => setLayout(defaultLayout)}>
+              Reset layout
+            </button>
+            <button
+              className="mg-inspector-toggle"
+              type="button"
+              onClick={() => setInspectorOpen((open) => !open)}
+            >
+              {inspectorOpen ? "Hide inspector" : "Show inspector"}
+            </button>
+          </div>
         </div>
-        <SelectedPlot record={selectedRecord} error={selectedRecord ? payload.errors[selectedRecord.id] : ""} />
         <section className="mg-gallery" aria-label="Plot gallery">
           <div className="mg-gallery-toolbar">
             <strong>
@@ -148,7 +258,23 @@ function App(props: StreamlitProps) {
             ))}
           </div>
         </section>
+        <SelectedPlot record={selectedRecord} error={selectedRecord ? payload.errors[selectedRecord.id] : ""} />
       </main>
+
+      {inspectorOpen ? (
+        <div
+          className="mg-resizer"
+          role="separator"
+          aria-label="Resize plot look inspector"
+          aria-orientation="vertical"
+          aria-valuemin={layoutBounds.inspectorMin}
+          aria-valuemax={layoutBounds.inspectorMax}
+          aria-valuenow={layout.inspectorWidth}
+          tabIndex={0}
+          onKeyDown={resizeInspectorWithKeyboard}
+          onPointerDown={startInspectorResize}
+        />
+      ) : null}
 
       <Inspector
         payload={payload}
@@ -225,9 +351,10 @@ function Tree({
           <button
             type="button"
             className="mg-tree-label"
+            title={current.path}
             onClick={() => onSelectFolder(current.path)}
           >
-            <span>{current.label}</span>
+            <span className="mg-tree-name">{current.label}</span>
             <span className="mg-count">{current.count}</span>
           </button>
         </div>
@@ -271,7 +398,9 @@ function PlotCard({
         <img src={record.imageSrc} alt={record.name} />
       </button>
       <div className="mg-card-body">
-        <div className="mg-card-title">{record.name}</div>
+        <div className="mg-card-title" title={record.name}>
+          {record.name}
+        </div>
         <div className="mg-badges">
           <span>{record.kind}</span>
           <span className={record.csvPath ? "good" : "bad"}>

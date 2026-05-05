@@ -93,6 +93,10 @@ export function parseLimits(minValue: string, maxValue: string): [number, number
   return [min, max];
 }
 
+export function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 export function eventId(type: string): string {
   return `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

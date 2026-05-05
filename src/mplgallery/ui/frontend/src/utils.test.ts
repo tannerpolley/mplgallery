@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTree, filterRecords, normalizeRedraw, parseLimits } from "./utils";
+import { buildTree, clampNumber, filterRecords, normalizeRedraw, parseLimits } from "./utils";
 import type { PlotRecord } from "./types";
 
 const records: PlotRecord[] = [
@@ -61,5 +61,11 @@ describe("component utilities", () => {
     expect(parseLimits("0", "1")).toEqual([0, 1]);
     expect(parseLimits("", "")).toBeNull();
     expect(() => parseLimits("2", "1")).toThrow(/min less than max/);
+  });
+
+  it("clamps layout widths", () => {
+    expect(clampNumber(120, 180, 400)).toBe(180);
+    expect(clampNumber(520, 180, 400)).toBe(400);
+    expect(clampNumber(260, 180, 400)).toBe(260);
   });
 });

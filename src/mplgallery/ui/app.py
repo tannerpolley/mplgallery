@@ -82,6 +82,11 @@ def _render_host_chrome(project_root: Path) -> None:
         [data-testid="stCustomComponentV1"] iframe {
             border: 0 !important;
             outline: 0 !important;
+            max-width: 100% !important;
+        }
+        [data-testid="stCustomComponentV1"] {
+            max-width: calc(100vw - 1.8rem) !important;
+            overflow-x: hidden !important;
         }
         iframe:focus,
         iframe:focus-visible {
