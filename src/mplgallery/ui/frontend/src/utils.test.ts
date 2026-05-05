@@ -38,13 +38,14 @@ describe("component utilities", () => {
     expect(tree.children.map((child) => child.path)).toEqual(["nested", "plots"]);
   });
 
-  it("filters by folder and search text", () => {
-    expect(filterRecords(records, "alpha", new Set(["."])).map((record) => record.id)).toEqual([
+  it("filters by checked plot ids and search text", () => {
+    expect(filterRecords(records, "alpha", new Set(["plots__alpha", "nested__beta"])).map((record) => record.id)).toEqual([
       "plots__alpha",
     ]);
-    expect(filterRecords(records, "", new Set(["nested"])).map((record) => record.id)).toEqual([
+    expect(filterRecords(records, "", new Set(["nested__beta"])).map((record) => record.id)).toEqual([
       "nested__beta",
     ]);
+    expect(filterRecords(records, "", new Set()).map((record) => record.id)).toEqual([]);
   });
 
   it("normalizes metadata while preserving style choices", () => {

@@ -1,0 +1,21 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}\\src"
+  ],
+  "ruff.path": [
+    "${workspaceFolder}\\.venv\\Scripts\\ruff.exe"
+  ],
+  "files.exclude": {
+    "**/.mplgallery/cache": true,
+    ".pytest_cache": true,
+    ".ruff_cache": true,
+    ".uv-cache": true,
+    ".wheel-smoke-venv": true
+  }
+}

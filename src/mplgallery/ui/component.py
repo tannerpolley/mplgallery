@@ -13,30 +13,48 @@ import streamlit.components.v1 as components
 from pydantic import BaseModel, ValidationError
 
 from mplgallery.core.models import PlotRecord, RedrawMetadata, SeriesStyle
-from mplgallery.core.renderer import DEFAULT_COLOR_CYCLE, LATEX_UNIT_SUGGESTIONS, PLOT_KIND_CHOICES
+from mplgallery.core.renderer import (
+    DEFAULT_COLOR_CYCLE,
+    LATEX_UNIT_SUGGESTIONS,
+    LEGEND_LOCATION_CHOICES,
+    PLOT_KIND_CHOICES,
+)
 
 
 LINESTYLE_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("-", "━━ Solid"),
-    ("--", "─ ─ Dashed"),
-    ("-.", "─ · Dash-dot"),
-    (":", "··· Dotted"),
-    ("", "No connecting line"),
+    ("-", "Solid"),
+    ("--", "Dashed"),
+    ("-.", "Dash-dot"),
+    (":", "Dotted"),
+    ("", "None"),
 )
 
 MARKER_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("o", "● Circle"),
-    ("s", "■ Square"),
-    ("D", "◆ Diamond"),
-    ("^", "▲ Triangle up"),
-    ("v", "▼ Triangle down"),
-    ("x", "× X"),
-    ("+", "+ Plus"),
-    (".", "• Point"),
-    ("", "No marker"),
+    ("o", "●"),
+    ("s", "■"),
+    ("D", "◆"),
+    ("^", "▲"),
+    ("v", "▼"),
+    ("x", "×"),
+    ("+", "+"),
+    (".", "•"),
+    ("", "○"),
 )
 
 SCALE_OPTIONS: tuple[str, ...] = ("linear", "log", "symlog", "logit")
+GRID_AXIS_OPTIONS: tuple[str, ...] = ("both", "x", "y")
+HATCH_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("", "None"),
+    ("/", "/"),
+    ("\\", "\\"),
+    ("|", "|"),
+    ("-", "-"),
+    ("+", "+"),
+    ("x", "x"),
+    ("o", "o"),
+    (".", "."),
+    ("*", "*"),
+)
 
 _COMPONENT_NAME = "mplgallery_browser"
 _FRONTEND_BUILD_DIR = Path(__file__).parent / "frontend" / "dist"
@@ -46,15 +64,11 @@ _component = components.declare_component(_COMPONENT_NAME, path=str(_FRONTEND_BU
 class ComponentEvent(BaseModel):
     id: str
     type: Literal[
-        "select_plot",
         "save_redraw_metadata",
         "request_rerender",
-        "set_tree_filter",
-        "set_tile_size",
     ]
     plot_id: str | None = None
     redraw: RedrawMetadata | None = None
-    value: str | int | float | bool | None = None
 
 
 class ComponentResult(BaseModel):
@@ -69,8 +83,9 @@ def render_plot_browser(payload: dict[str, Any]) -> ComponentResult:
     try:
         return ComponentResult.model_validate(raw)
     except ValidationError as exc:
+        st.session_state["mplgallery_component_bridge_error"] = str(exc)
         return ComponentResult(
-            event=ComponentEvent(id="invalid-component-event", type="request_rerender", value=str(exc))
+            event=ComponentEvent(id="invalid-component-event", type="request_rerender")
         )
 
 
@@ -96,6 +111,9 @@ def build_component_payload(
             ],
             "units": [unit for unit in LATEX_UNIT_SUGGESTIONS if unit],
             "scales": list(SCALE_OPTIONS),
+            "gridAxes": list(GRID_AXIS_OPTIONS),
+            "legendLocations": list(LEGEND_LOCATION_CHOICES),
+            "hatches": [{"value": value, "label": label} for value, label in HATCH_OPTIONS],
         },
         "errors": errors or {},
     }
@@ -111,18 +129,13 @@ def process_component_event(
         return False
 
     st.session_state["mplgallery_last_event_id"] = event.id
-    if event.type == "select_plot" and event.plot_id:
-        st.session_state["mplgallery_selected_plot_id"] = event.plot_id
-        st.query_params["plot_id"] = event.plot_id
-        _clear_plot_error(event.plot_id)
-        return True
-
     if event.type == "save_redraw_metadata" and event.plot_id and event.redraw:
         try:
             record = _record_by_plot_id(st.session_state["mplgallery_records"], event.plot_id)
             from mplgallery.core.manifest import update_manifest_redraw
 
             update_manifest_redraw(project_root, record.image.relative_path, event.redraw)
+            _remove_cached_preview(project_root, record)
         except Exception as exc:
             _set_plot_error(event.plot_id, str(exc))
         else:
@@ -256,3 +269,9 @@ def _clear_plot_error(plot_id: str) -> None:
     errors = dict(component_errors())
     errors.pop(plot_id, None)
     st.session_state["mplgallery_component_errors"] = errors
+
+
+def _remove_cached_preview(project_root: Path, record: PlotRecord) -> None:
+    suffix = record.image.suffix.lower() if record.image.suffix.lower() in {".png", ".svg"} else ".png"
+    cache_path = project_root / ".mplgallery" / "cache" / f"{record.plot_id}{suffix}"
+    cache_path.unlink(missing_ok=True)

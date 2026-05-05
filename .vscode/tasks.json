@@ -1,0 +1,98 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "mplgallery: sync dev env",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 sync",
+      "problemMatcher": []
+    },
+    {
+      "label": "mplgallery: serve examples",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 serve-examples -Port 8507",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "streamlit",
+        "pattern": [
+          {
+            "regexp": ".",
+            "file": 1,
+            "location": 2,
+            "message": 3
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "Local URL:|Network URL:"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "mplgallery: scan examples",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 scan examples",
+      "problemMatcher": []
+    },
+    {
+      "label": "mplgallery: test",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 test",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "mplgallery: lint",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 lint",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "mplgallery: check",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 check",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "mplgallery: frontend install",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 frontend-install",
+      "problemMatcher": []
+    },
+    {
+      "label": "mplgallery: frontend test",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 frontend-test",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "mplgallery: frontend build",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 frontend-build",
+      "problemMatcher": []
+    },
+    {
+      "label": "mplgallery: build wheel",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 build",
+      "problemMatcher": []
+    },
+    {
+      "label": "mplgallery: wheel smoke",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev.ps1 wheel-smoke",
+      "problemMatcher": []
+    }
+  ]
+}

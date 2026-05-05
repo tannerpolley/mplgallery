@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Streamlit } from "streamlit-component-lib";
 import type { BrowserPayload, PlotRecord, RedrawMetadata, SeriesStyle, TreeNode } from "./types";
-import { buildTree, clampNumber, eventId, filterRecords, normalizeRedraw, parseLimits } from "./utils";
+import { buildTree, clampNumber, eventId, filterRecords, foldersFor, normalizeRedraw, parseLimits } from "./utils";
 import "./App.css";
 
 type StreamlitProps = {
@@ -26,20 +26,20 @@ const emptyPayload: BrowserPayload = {
     colors: [],
     units: [],
     scales: ["linear", "log", "symlog", "logit"],
+    gridAxes: ["both", "x", "y"],
+    legendLocations: ["best"],
+    hatches: [],
   },
   errors: {},
 };
 
 const defaultLayout = {
   treeWidth: 240,
-  inspectorWidth: 340,
 };
 
 const layoutBounds = {
   treeMin: 170,
   treeMax: 380,
-  inspectorMin: 280,
-  inspectorMax: 560,
 };
 
 function App(props: StreamlitProps) {
@@ -48,43 +48,47 @@ function App(props: StreamlitProps) {
     payload.selectedPlotId ?? payload.records[0]?.id ?? null,
   );
   const [selectedFolder, setSelectedFolder] = useState(".");
-  const [checkedFolders, setCheckedFolders] = useState<Set<string>>(new Set(["."]));
+  const [checkedPlotIds, setCheckedPlotIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [tileSize, setTileSize] = useState(230);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [maximizedPlotId, setMaximizedPlotId] = useState<string | null>(null);
+  const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useState(defaultLayout);
 
   useEffect(() => {
     setSelectedPlotId(payload.selectedPlotId ?? payload.records[0]?.id ?? null);
   }, [payload.selectedPlotId, payload.records]);
 
+  useEffect(() => {
+    const validIds = new Set(payload.records.map((record) => record.id));
+    setCheckedPlotIds((current) => new Set([...current].filter((plotId) => validIds.has(plotId))));
+  }, [payload.records]);
+
   const tree = useMemo(() => buildTree(payload.records), [payload.records]);
   const visibleRecords = useMemo(
-    () => filterRecords(payload.records, query, checkedFolders),
-    [payload.records, query, checkedFolders],
+    () => filterRecords(payload.records, query, checkedPlotIds),
+    [payload.records, query, checkedPlotIds],
   );
   const selectedRecord =
     payload.records.find((record) => record.id === selectedPlotId) ?? payload.records[0] ?? null;
+  const maximizedRecord =
+    payload.records.find((record) => record.id === maximizedPlotId) ?? selectedRecord;
 
   function selectPlot(plotId: string) {
     setSelectedPlotId(plotId);
-    Streamlit.setComponentValue({
-      event: { id: eventId("select_plot"), type: "select_plot", plot_id: plotId },
-    });
+  }
+
+  function maximizePlot(plotId: string) {
+    selectPlot(plotId);
+    setMaximizedPlotId(plotId);
   }
 
   function updateQuery(value: string) {
     setQuery(value);
-    Streamlit.setComponentValue({
-      event: { id: eventId("set_tree_filter"), type: "set_tree_filter", value },
-    });
   }
 
   function updateTileSize(value: number) {
     setTileSize(value);
-    Streamlit.setComponentValue({
-      event: { id: eventId("set_tile_size"), type: "set_tile_size", value },
-    });
   }
 
   function startTreeResize(event: ReactPointerEvent<HTMLDivElement>) {
@@ -109,28 +113,6 @@ function App(props: StreamlitProps) {
     window.addEventListener("pointerup", handlePointerUp, { once: true });
   }
 
-  function startInspectorResize(event: ReactPointerEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = layout.inspectorWidth;
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const nextWidth = clampNumber(
-        startWidth - (moveEvent.clientX - startX),
-        layoutBounds.inspectorMin,
-        layoutBounds.inspectorMax,
-      );
-      setLayout((current) => ({ ...current, inspectorWidth: nextWidth }));
-    };
-    const handlePointerUp = () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      document.body.classList.remove("mg-is-resizing");
-    };
-
-    document.body.classList.add("mg-is-resizing");
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp, { once: true });
-  }
-
   function resizeTreeWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
@@ -141,27 +123,12 @@ function App(props: StreamlitProps) {
     }));
   }
 
-  function resizeInspectorWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const delta = event.key === "ArrowLeft" ? 16 : -16;
-    setLayout((current) => ({
-      ...current,
-      inspectorWidth: clampNumber(
-        current.inspectorWidth + delta,
-        layoutBounds.inspectorMin,
-        layoutBounds.inspectorMax,
-      ),
-    }));
-  }
-
   const shellStyle = {
     "--tree-width": `${layout.treeWidth}px`,
-    "--inspector-width": `${layout.inspectorWidth}px`,
   } as CSSProperties;
 
   return (
-    <div className={`mg-shell ${inspectorOpen ? "" : "is-inspector-closed"}`} style={shellStyle}>
+    <div className="mg-shell" style={shellStyle}>
       <aside className="mg-tree-panel" aria-label="Output tree">
         <div className="mg-panel-title">Output tree</div>
         <label className="mg-sr-only" htmlFor="plot-search">
@@ -176,23 +143,30 @@ function App(props: StreamlitProps) {
         />
         <Tree
           node={tree}
+          records={payload.records}
           selectedFolder={selectedFolder}
-          checkedFolders={checkedFolders}
+          selectedPlotId={selectedPlotId}
+          checkedPlotIds={checkedPlotIds}
           onSelectFolder={setSelectedFolder}
+          onSelectPlot={selectPlot}
           onToggleFolder={(path, checked) => {
-            setCheckedFolders((current) => {
+            setCheckedPlotIds((current) => {
               const next = new Set(current);
-              if (path === ".") {
-                if (checked) return new Set(["."]);
-                next.delete(".");
-                return next;
-              }
-              if (checked) {
-                next.delete(".");
-                next.add(path);
-              } else {
-                next.delete(path);
-              }
+              const folderPlotIds = payload.records
+                .filter((record) => foldersFor(record).includes(path))
+                .map((record) => record.id);
+              folderPlotIds.forEach((plotId) => {
+                if (checked) next.add(plotId);
+                else next.delete(plotId);
+              });
+              return next;
+            });
+          }}
+          onTogglePlot={(plotId, checked) => {
+            setCheckedPlotIds((current) => {
+              const next = new Set(current);
+              if (checked) next.add(plotId);
+              else next.delete(plotId);
               return next;
             });
           }}
@@ -222,13 +196,6 @@ function App(props: StreamlitProps) {
             <button className="mg-inspector-toggle" type="button" onClick={() => setLayout(defaultLayout)}>
               Reset layout
             </button>
-            <button
-              className="mg-inspector-toggle"
-              type="button"
-              onClick={() => setInspectorOpen((open) => !open)}
-            >
-              {inspectorOpen ? "Hide inspector" : "Show inspector"}
-            </button>
           </div>
         </div>
         <section className="mg-gallery" aria-label="Plot gallery">
@@ -241,73 +208,77 @@ function App(props: StreamlitProps) {
               <input
                 type="range"
                 min="160"
-                max="360"
+                max="1400"
+                step="20"
                 value={tileSize}
                 onChange={(event) => updateTileSize(Number(event.target.value))}
               />
             </label>
           </div>
           <div className="mg-card-grid" style={{ ["--tile-size" as string]: `${tileSize}px` }}>
-            {visibleRecords.map((record) => (
+            {visibleRecords.length ? visibleRecords.map((record) => (
               <PlotCard
                 key={record.id}
                 record={record}
                 selected={record.id === selectedRecord?.id}
-                onSelect={() => selectPlot(record.id)}
+                onMaximize={() => maximizePlot(record.id)}
+                expanded={expandedCardIds.has(record.id)}
+                onToggleExpanded={() => {
+                  setExpandedCardIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(record.id)) next.delete(record.id);
+                    else next.add(record.id);
+                    return next;
+                  });
+                }}
               />
-            ))}
+            )) : <div className="mg-empty">Check a folder or plot to show it here.</div>}
           </div>
         </section>
-        <SelectedPlot record={selectedRecord} error={selectedRecord ? payload.errors[selectedRecord.id] : ""} />
       </main>
 
-      {inspectorOpen ? (
-        <div
-          className="mg-resizer"
-          role="separator"
-          aria-label="Resize plot look inspector"
-          aria-orientation="vertical"
-          aria-valuemin={layoutBounds.inspectorMin}
-          aria-valuemax={layoutBounds.inspectorMax}
-          aria-valuenow={layout.inspectorWidth}
-          tabIndex={0}
-          onKeyDown={resizeInspectorWithKeyboard}
-          onPointerDown={startInspectorResize}
+      {maximizedPlotId && maximizedRecord ? (
+        <PlotLookModal
+          payload={payload}
+          record={maximizedRecord}
+          error={payload.errors[maximizedRecord.id]}
+          onClose={() => setMaximizedPlotId(null)}
+          onSave={(redraw) => {
+            Streamlit.setComponentValue({
+              event: {
+                id: eventId("save_redraw_metadata"),
+                type: "save_redraw_metadata",
+                plot_id: maximizedRecord.id,
+                redraw,
+              },
+            });
+          }}
         />
       ) : null}
-
-      <Inspector
-        payload={payload}
-        record={selectedRecord}
-        open={inspectorOpen}
-        onSave={(redraw) => {
-          if (!selectedRecord) return;
-          Streamlit.setComponentValue({
-            event: {
-              id: eventId("save_redraw_metadata"),
-              type: "save_redraw_metadata",
-              plot_id: selectedRecord.id,
-              redraw,
-            },
-          });
-        }}
-      />
     </div>
   );
 }
 
 function Tree({
   node,
+  records,
   selectedFolder,
-  checkedFolders,
+  selectedPlotId,
+  checkedPlotIds,
   onSelectFolder,
+  onSelectPlot,
   onToggleFolder,
+  onTogglePlot,
 }: {
   node: TreeNode;
+  records: PlotRecord[];
   selectedFolder: string;
-  checkedFolders: Set<string>;
+  selectedPlotId: string | null;
+  checkedPlotIds: Set<string>;
   onSelectFolder: (path: string) => void;
+  onSelectPlot: (plotId: string) => void;
   onToggleFolder: (path: string, checked: boolean) => void;
+  onTogglePlot: (plotId: string, checked: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["."]));
 
@@ -320,34 +291,53 @@ function Tree({
     });
   }
 
+  function folderRecords(path: string) {
+    return records.filter((record) => foldersFor(record).includes(path));
+  }
+
+  function immediateRecords(path: string) {
+    return records
+      .filter((record) => parentFolder(record.imagePath) === path)
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
   function renderNode(current: TreeNode, depth = 0) {
     const isExpanded = expanded.has(current.path);
     const isSelected = selectedFolder === current.path;
+    const descendantRecords = folderRecords(current.path);
+    const checkedCount = descendantRecords.filter((record) => checkedPlotIds.has(record.id)).length;
+    const allChecked = descendantRecords.length > 0 && checkedCount === descendantRecords.length;
+    const partiallyChecked = checkedCount > 0 && !allChecked;
+    const childPlots = immediateRecords(current.path);
+    const hasExpandableChildren = current.children.length > 0 || childPlots.length > 0;
     return (
       <div key={current.path} className="mg-tree-node">
         <div
-          className={`mg-tree-row ${isSelected ? "is-selected" : ""}`}
+          className={`mg-tree-row ${isSelected ? "is-selected" : ""} ${partiallyChecked ? "is-partial" : ""}`}
           style={{ paddingLeft: `${depth * 14 + 4}px` }}
           role="treeitem"
           aria-selected={isSelected}
-          aria-expanded={current.children.length ? isExpanded : undefined}
+          aria-expanded={hasExpandableChildren ? isExpanded : undefined}
         >
-          <input
-            type="checkbox"
-            className="mg-tree-check"
-            aria-label={`Include ${current.label}`}
-            checked={checkedFolders.has(current.path)}
-            onChange={(event) => onToggleFolder(current.path, event.target.checked)}
-          />
           <button
             type="button"
             className="mg-tree-twisty"
             aria-label={`${isExpanded ? "Collapse" : "Expand"} ${current.label}`}
-            disabled={!current.children.length}
+            disabled={!hasExpandableChildren}
             onClick={() => toggle(current.path)}
           >
-            {current.children.length ? (isExpanded ? "▾" : "▸") : ""}
+            {hasExpandableChildren ? (isExpanded ? "▾" : "▸") : ""}
           </button>
+          <input
+            type="checkbox"
+            className="mg-tree-check"
+            aria-label={`Include ${current.label}`}
+            checked={allChecked}
+            ref={(element) => {
+              if (element) element.indeterminate = partiallyChecked;
+            }}
+            onChange={(event) => onToggleFolder(current.path, event.target.checked)}
+          />
           <button
             type="button"
             className="mg-tree-label"
@@ -355,10 +345,46 @@ function Tree({
             onClick={() => onSelectFolder(current.path)}
           >
             <span className="mg-tree-name">{current.label}</span>
-            <span className="mg-count">{current.count}</span>
+            <span className={`mg-count ${checkedCount ? "has-checked" : ""}`}>
+              {checkedCount ? `${checkedCount}/` : ""}
+              {current.count}
+            </span>
           </button>
         </div>
-        {isExpanded && current.children.map((child) => renderNode(child, depth + 1))}
+        {isExpanded ? (
+          <>
+            {current.children.map((child) => renderNode(child, depth + 1))}
+            {childPlots.map((record) => (
+              <div
+                key={record.id}
+                className={`mg-tree-row mg-tree-plot ${selectedPlotId === record.id ? "is-selected" : ""}`}
+                style={{ paddingLeft: `${(depth + 1) * 14 + 4}px` }}
+                role="treeitem"
+                aria-selected={selectedPlotId === record.id}
+              >
+                <span className="mg-tree-twisty" aria-hidden="true" />
+                <input
+                  type="checkbox"
+                  className="mg-tree-check"
+                  aria-label={`Include plot ${record.name}`}
+                  checked={checkedPlotIds.has(record.id)}
+                  onChange={(event) => onTogglePlot(record.id, event.target.checked)}
+                />
+                <button
+                  type="button"
+                  className="mg-tree-label"
+                  title={record.imagePath}
+                  onClick={() => {
+                    onSelectFolder(current.path);
+                    onSelectPlot(record.id);
+                  }}
+                >
+                  <span className="mg-tree-name">{record.name}</span>
+                </button>
+              </div>
+            ))}
+          </>
+        ) : null}
       </div>
     );
   }
@@ -366,12 +392,26 @@ function Tree({
   return <div role="tree">{renderNode(node)}</div>;
 }
 
-function SelectedPlot({ record, error }: { record: PlotRecord | null; error?: string }) {
+function parentFolder(imagePath: string): string {
+  const parts = imagePath.split("/");
+  if (parts.length <= 1) return ".";
+  return parts.slice(0, -1).join("/");
+}
+
+function SelectedPlot({
+  record,
+  error,
+  variant = "inline",
+}: {
+  record: PlotRecord | null;
+  error?: string;
+  variant?: "inline" | "modal";
+}) {
   if (!record) {
     return <div className="mg-empty">No plots discovered.</div>;
   }
   return (
-    <section className="mg-canvas" aria-label={`Selected plot ${record.name}`}>
+    <section className={`mg-canvas ${variant === "modal" ? "is-modal" : ""}`} aria-label={`Selected plot ${record.name}`}>
       {error || record.renderError ? (
         <div className="mg-error" role="alert">
           {error || record.renderError}
@@ -386,45 +426,93 @@ function SelectedPlot({ record, error }: { record: PlotRecord | null; error?: st
 function PlotCard({
   record,
   selected,
-  onSelect,
+  onMaximize,
+  expanded,
+  onToggleExpanded,
 }: {
   record: PlotRecord;
   selected: boolean;
-  onSelect: () => void;
+  onMaximize: () => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
 }) {
   return (
     <article className={`mg-card ${selected ? "is-selected" : ""}`}>
-      <button type="button" className="mg-card-image" onClick={onSelect}>
+      <button type="button" className="mg-card-image" onClick={onMaximize}>
         <img src={record.imageSrc} alt={record.name} />
       </button>
       <div className="mg-card-body">
-        <div className="mg-card-title" title={record.name}>
-          {record.name}
+        {expanded ? (
+          <div className="mg-card-meta">
+            <div className="mg-card-title" title={record.name}>
+              {record.name}
+            </div>
+            <div className="mg-badges">
+              <span>{record.kind}</span>
+              <span className={record.csvPath ? "good" : "bad"}>
+                {record.csvPath ? "CSV matched" : "CSV missing"}
+              </span>
+              <span>{record.confidence}</span>
+            </div>
+            <button type="button" className="mg-edit-button" onClick={onMaximize}>
+              Maximize / edit
+            </button>
+          </div>
+        ) : null}
+        <div className="mg-card-actions">
+          <button
+            type="button"
+            className="mg-info-button"
+            aria-expanded={expanded}
+            onClick={onToggleExpanded}
+          >
+            {expanded ? "Hide info" : "Info"}
+          </button>
         </div>
-        <div className="mg-badges">
-          <span>{record.kind}</span>
-          <span className={record.csvPath ? "good" : "bad"}>
-            {record.csvPath ? "CSV matched" : "CSV missing"}
-          </span>
-          <span>{record.confidence}</span>
-        </div>
-        <button type="button" className="mg-edit-button" onClick={onSelect}>
-          Edit setup
-        </button>
       </div>
     </article>
+  );
+}
+
+function PlotLookModal({
+  payload,
+  record,
+  error,
+  onClose,
+  onSave,
+}: {
+  payload: BrowserPayload;
+  record: PlotRecord;
+  error?: string;
+  onClose: () => void;
+  onSave: (redraw: RedrawMetadata) => void;
+}) {
+  return (
+    <div className="mg-modal-backdrop" role="dialog" aria-modal="true" aria-label={`Plot look for ${record.name}`}>
+      <section className="mg-modal-card">
+        <div className="mg-modal-head">
+          <div>
+            <div className="mg-eyebrow">Maximized plot</div>
+            <h2>{record.name}</h2>
+          </div>
+          <button type="button" className="mg-inspector-toggle" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <SelectedPlot record={record} error={error} variant="modal" />
+        <Inspector payload={payload} record={record} onSave={onSave} />
+      </section>
+    </div>
   );
 }
 
 function Inspector({
   payload,
   record,
-  open,
   onSave,
 }: {
   payload: BrowserPayload;
   record: PlotRecord | null;
-  open: boolean;
   onSave: (redraw: RedrawMetadata) => void;
 }) {
   const [redraw, setRedraw] = useState<RedrawMetadata>({});
@@ -437,7 +525,6 @@ function Inspector({
     setLocalError("");
   }, [record]);
 
-  if (!open) return null;
   if (!record) {
     return (
       <aside className="mg-inspector" aria-label="Plot look inspector">
@@ -450,6 +537,12 @@ function Inspector({
   const xlim = redraw.xlim ?? null;
   const ylim = redraw.ylim ?? null;
   const figure = redraw.figure ?? {};
+  const plotKind = redraw.kind ?? "line";
+  const supportsLine = ["line", "step", "area"].includes(plotKind);
+  const supportsMarker = ["line", "scatter"].includes(plotKind);
+  const supportsHatch = ["bar", "barh", "hist"].includes(plotKind);
+  const supportsBarWidth = ["bar", "barh"].includes(plotKind);
+  const isHistogram = plotKind === "hist";
   const defaultColor = payload.options.colors[0]?.value ?? "#1f77b4";
 
   function updateRedraw(patch: RedrawMetadata) {
@@ -578,29 +671,85 @@ function Inspector({
           />
         </label>
         <label>
-          Histogram bins
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={redraw.bins ?? ""}
-            onChange={(event) =>
-              updateRedraw({ bins: event.target.value ? Number(event.target.value) : undefined })
-            }
-          />
+          Legend location
+          <select
+            value={redraw.legend_location ?? "best"}
+            onChange={(event) => updateRedraw({ legend_location: event.target.value })}
+          >
+            {payload.options.legendLocations.map((location) => (
+              <option key={location} value={location}>
+                {location}
+              </option>
+            ))}
+          </select>
         </label>
+        {isHistogram ? (
+          <label>
+            Histogram bins
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={redraw.bins ?? ""}
+              onChange={(event) =>
+                updateRedraw({ bins: event.target.value ? Number(event.target.value) : undefined })
+              }
+            />
+          </label>
+        ) : null}
       </details>
 
       <details>
         <summary>Figure</summary>
-        <label className="mg-checkbox">
-          <input
-            type="checkbox"
-            checked={redraw.grid ?? true}
-            onChange={(event) => updateRedraw({ grid: event.target.checked })}
-          />
-          Grid
-        </label>
+        <div className="mg-toggle-strip">
+          <label className="mg-mini-toggle">
+            <input
+              type="checkbox"
+              checked={redraw.grid ?? true}
+              onChange={(event) => updateRedraw({ grid: event.target.checked })}
+            />
+            <span>Grid</span>
+          </label>
+          <label className="mg-mini-toggle">
+            <input
+              type="checkbox"
+              checked={figure.constrained_layout ?? false}
+              onChange={(event) =>
+                updateRedraw({ figure: { ...figure, constrained_layout: event.target.checked } })
+              }
+            />
+            <span>Tight layout</span>
+          </label>
+        </div>
+        {(redraw.grid ?? true) ? (
+          <div className="mg-field-grid two">
+            <label>
+              Grid axis
+              <select
+                value={redraw.grid_axis ?? "both"}
+                onChange={(event) => updateRedraw({ grid_axis: event.target.value })}
+              >
+                {payload.options.gridAxes.map((axis) => (
+                  <option key={axis} value={axis}>
+                    {axis}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Grid opacity
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={redraw.grid_alpha ?? 0.25}
+                onChange={(event) => updateRedraw({ grid_alpha: Number(event.target.value) })}
+              />
+              <span className="mg-inline-value">{redraw.grid_alpha ?? 0.25}</span>
+            </label>
+          </div>
+        ) : null}
         <div className="mg-field-grid three">
           <label>
             Width
@@ -630,6 +779,15 @@ function Inspector({
             />
           </label>
         </div>
+        <div>
+          <div className="mg-label">Figure background</div>
+          <VisualPicker
+            value={figure.facecolor ?? "#ffffff"}
+            options={[{ value: "#ffffff", label: "White" }, ...payload.options.colors]}
+            kind="color"
+            onChange={(value) => updateRedraw({ figure: { ...figure, facecolor: value } })}
+          />
+        </div>
       </details>
 
       <details open>
@@ -653,24 +811,28 @@ function Inspector({
             </label>
             <div className="mg-series-stack">
               <div>
-                <div className="mg-label">Color</div>
-                <div className="mg-swatch-grid">
-                  {payload.options.colors.map((option) => (
-                    <button
-                      type="button"
-                      key={option.value}
-                      className={`mg-swatch ${(style.color ?? defaultColor) === option.value ? "is-active" : ""}`}
-                      title={option.label}
-                      aria-label={option.label}
-                      style={{ background: option.value }}
-                      onClick={() => updateSeries(index, { color: option.value })}
-                    />
-                  ))}
-                </div>
+                <div className="mg-label">{supportsHatch ? "Fill" : "Color"}</div>
+                <VisualPicker
+                  value={style.color ?? defaultColor}
+                  options={payload.options.colors}
+                  kind="color"
+                  onChange={(value) => updateSeries(index, { color: value })}
+                />
               </div>
+              {supportsHatch ? (
+                <div>
+                  <div className="mg-label">Edge</div>
+                  <VisualPicker
+                    value={style.edgecolor ?? "#17202f"}
+                    options={[{ value: "", label: "None" }, ...payload.options.colors]}
+                    kind="color"
+                    onChange={(value) => updateSeries(index, { edgecolor: value || undefined })}
+                  />
+                </div>
+              ) : null}
               <div className="mg-field-grid two">
                 <label>
-                  Width
+                  {supportsHatch ? "Stroke" : "Width"}
                   <input
                     type="number"
                     step="0.1"
@@ -691,38 +853,78 @@ function Inspector({
                   <span className="mg-inline-value">{style.alpha ?? 1}</span>
                 </label>
               </div>
-              <div>
-                <div className="mg-label">Line</div>
-                <div className="mg-choice-grid">
-                  {payload.options.lineStyles.map((option) => (
-                    <button
-                      type="button"
-                      key={option.value}
-                      className={`mg-choice ${(style.linestyle ?? "-") === option.value ? "is-active" : ""}`}
-                      onClick={() => updateSeries(index, { linestyle: option.value })}
-                    >
-                      <span className={`mg-line-sample is-${lineStyleClass(option.value)}`} />
-                      <span>{option.label}</span>
-                    </button>
-                  ))}
+              {supportsLine ? (
+                <div>
+                  <div className="mg-label">Line</div>
+                  <VisualPicker
+                    value={style.linestyle ?? "-"}
+                    options={payload.options.lineStyles}
+                    kind="line"
+                    onChange={(value) => updateSeries(index, { linestyle: value })}
+                  />
                 </div>
-              </div>
-              <div>
-                <div className="mg-label">Marker</div>
-                <div className="mg-choice-grid">
-                  {payload.options.markers.map((option) => (
-                    <button
-                      type="button"
-                      key={option.value}
-                      className={`mg-choice ${(style.marker ?? "o") === option.value ? "is-active" : ""}`}
-                      onClick={() => updateSeries(index, { marker: option.value })}
-                    >
-                      <span className={`mg-marker-sample is-${markerClass(option.value)}`}>{markerGlyph(option.value)}</span>
-                      <span>{option.label}</span>
-                    </button>
-                  ))}
+              ) : null}
+              {supportsMarker ? (
+                <div>
+                  <div className="mg-label">Marker</div>
+                  <VisualPicker
+                    value={style.marker ?? "o"}
+                    options={payload.options.markers}
+                    kind="marker"
+                    onChange={(value) => updateSeries(index, { marker: value })}
+                  />
                 </div>
-              </div>
+              ) : null}
+              {supportsMarker ? (
+                <label>
+                  Marker size
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={style.markersize ?? 5}
+                    onChange={(event) => updateSeries(index, { markersize: Number(event.target.value) })}
+                  />
+                </label>
+              ) : null}
+              {supportsHatch ? (
+                <div>
+                  <div className="mg-label">Hatch</div>
+                  <VisualPicker
+                    value={style.hatch ?? ""}
+                    options={payload.options.hatches}
+                    kind="hatch"
+                    onChange={(value) => updateSeries(index, { hatch: value })}
+                  />
+                </div>
+              ) : null}
+              {supportsBarWidth ? (
+                <label>
+                  Bar width
+                  <input
+                    type="number"
+                    min="0.05"
+                    step="0.05"
+                    value={style.bar_width ?? ""}
+                    placeholder="auto"
+                    onChange={(event) =>
+                      updateSeries(index, { bar_width: event.target.value ? Number(event.target.value) : undefined })
+                    }
+                  />
+                </label>
+              ) : null}
+              <label>
+                Layer
+                <input
+                  type="number"
+                  step="1"
+                  value={style.zorder ?? ""}
+                  placeholder="auto"
+                  onChange={(event) =>
+                    updateSeries(index, { zorder: event.target.value ? Number(event.target.value) : undefined })
+                  }
+                />
+              </label>
             </div>
           </fieldset>
         ))}
@@ -742,6 +944,97 @@ function Inspector({
         </dl>
       </details>
     </aside>
+  );
+}
+
+function VisualPicker({
+  value,
+  options,
+  kind,
+  onChange,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  kind: "color" | "line" | "marker" | "hatch";
+  onChange: (value: string) => void;
+}) {
+  const active = options.find((option) => option.value === value) ?? options[0];
+  const label = active?.label ?? "None";
+  return (
+    <details className={`mg-picker mg-picker-${kind}`}>
+      <summary aria-label={`Selected ${kind}: ${label}`}>
+        <VisualOption value={active?.value ?? value} label={label} kind={kind} />
+      </summary>
+      <div className="mg-picker-menu" role="listbox">
+        {options.map((option) => (
+          <button
+            type="button"
+            key={option.value || "none"}
+            className={`mg-picker-option ${option.value === value ? "is-active" : ""}`}
+            title={option.label}
+            aria-label={option.label}
+            aria-selected={option.value === value}
+            onClick={(event) => {
+              onChange(option.value);
+              event.currentTarget.closest("details")?.removeAttribute("open");
+            }}
+          >
+            <VisualOption value={option.value} label={option.label} kind={kind} compact />
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function VisualOption({
+  value,
+  label,
+  kind,
+  compact = false,
+}: {
+  value: string;
+  label: string;
+  kind: "color" | "line" | "marker" | "hatch";
+  compact?: boolean;
+}) {
+  if (kind === "color") {
+    return (
+      <span className="mg-visual-option">
+        <span
+          className={`mg-color-chip ${value ? "" : "is-empty"}`}
+          style={value ? { background: value } : undefined}
+          aria-hidden="true"
+        />
+        {!compact ? <span className="mg-sr-only">{label}</span> : null}
+      </span>
+    );
+  }
+  if (kind === "line") {
+    return (
+      <span className="mg-visual-option">
+        <span className={`mg-line-preview is-${lineStyleClass(value)}`} aria-hidden="true" />
+        {!compact ? <span className="mg-picker-label">{label}</span> : null}
+      </span>
+    );
+  }
+  if (kind === "hatch") {
+    return (
+      <span className="mg-visual-option">
+        <span className={`mg-hatch-preview is-${hatchClass(value)}`} aria-hidden="true">
+          {value || "none"}
+        </span>
+        {!compact ? <span className="mg-picker-label">{label}</span> : null}
+      </span>
+    );
+  }
+  return (
+    <span className="mg-visual-option">
+      <span className={`mg-marker-preview is-${markerClass(value)}`} aria-hidden="true">
+        {markerGlyph(value)}
+      </span>
+      {!compact ? <span className="mg-sr-only">{label}</span> : null}
+    </span>
   );
 }
 
@@ -824,6 +1117,31 @@ function markerClass(value: string): string {
       return "none";
     default:
       return "circle";
+  }
+}
+
+function hatchClass(value: string): string {
+  switch (value) {
+    case "/":
+      return "slash";
+    case "\\":
+      return "backslash";
+    case "|":
+      return "vertical";
+    case "-":
+      return "horizontal";
+    case "+":
+      return "plus";
+    case "x":
+      return "cross";
+    case "o":
+      return "circle";
+    case ".":
+      return "dot";
+    case "*":
+      return "star";
+    default:
+      return "none";
   }
 }
 

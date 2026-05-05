@@ -122,3 +122,6 @@ uv sync --dev
 uv run pytest
 uv run ruff check .
 ```
+
+For repo-local PowerShell actions and VS Code tasks, see
+[`docs/development_environment.md`](docs/development_environment.md).

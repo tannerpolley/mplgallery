@@ -12,12 +12,17 @@ export type RedrawMetadata = {
   xlim?: [number, number] | null;
   ylim?: [number, number] | null;
   grid?: boolean;
+  grid_axis?: string;
+  grid_alpha?: number;
   legend_title?: string;
+  legend_location?: string;
   bins?: number;
   figure?: {
     width_inches?: number;
     height_inches?: number;
     dpi?: number;
+    facecolor?: string;
+    constrained_layout?: boolean;
   };
   series?: SeriesStyle[];
 };
@@ -26,10 +31,15 @@ export type SeriesStyle = {
   y: string;
   label?: string;
   color?: string;
+  edgecolor?: string;
   linewidth?: number;
   linestyle?: string;
   marker?: string;
+  markersize?: number;
+  hatch?: string;
+  bar_width?: number;
   alpha?: number;
+  zorder?: number;
 };
 
 export type PlotRecord = {
@@ -67,16 +77,16 @@ export type BrowserPayload = {
     colors: SelectOption[];
     units: string[];
     scales: string[];
+    gridAxes: string[];
+    legendLocations: string[];
+    hatches: SelectOption[];
   };
   errors: Record<string, string>;
 };
 
 export type ComponentEvent =
-  | { id: string; type: "select_plot"; plot_id: string }
   | { id: string; type: "save_redraw_metadata"; plot_id: string; redraw: RedrawMetadata }
-  | { id: string; type: "request_rerender"; plot_id: string }
-  | { id: string; type: "set_tree_filter"; value: string }
-  | { id: string; type: "set_tile_size"; value: number };
+  | { id: string; type: "request_rerender"; plot_id: string };
 
 export type TreeNode = {
   path: string;

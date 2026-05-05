@@ -42,7 +42,15 @@ def serve(
     """Launch the local Streamlit artifact browser."""
     resolved_root = project_root.expanduser().resolve()
     app_path = Path(__file__).parent / "ui" / "app.py"
-    command = [sys.executable, "-m", "streamlit", "run", str(app_path)]
+    command = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(app_path),
+        "--server.headless=true",
+        "--browser.gatherUsageStats=false",
+    ]
     if port is not None:
         command.append(f"--server.port={port}")
     command.extend(["--", "--project-root", str(resolved_root)])

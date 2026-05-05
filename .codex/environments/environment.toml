@@ -1,0 +1,28 @@
+version = 1
+name = "MPLGallery"
+
+[setup]
+script = '''
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+$repoRoot = (git rev-parse --show-toplevel).Trim()
+Set-Location $repoRoot
+
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    throw "uv is required for MPLGallery. Install uv, then rerun setup."
+}
+
+if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    throw "npm is required for the Streamlit frontend component. Install Node.js/npm, then rerun setup."
+}
+
+uv sync --dev
+npm --prefix src/mplgallery/ui/frontend install
+'''
+
+[[actions]]
+name = "Open Streamlit App"
+icon = "run"
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 serve-examples -Port 8507"
+platform = "win32"

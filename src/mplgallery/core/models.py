@@ -31,6 +31,8 @@ class MatplotlibFigureAttributes(BaseModel):
     width_inches: float = 6.0
     height_inches: float = 4.0
     dpi: int = 150
+    facecolor: str | None = None
+    constrained_layout: bool | None = None
 
 
 class AxisMetadata(BaseModel):
@@ -44,10 +46,15 @@ class SeriesStyle(BaseModel):
     y: str
     label: str | None = None
     color: str | None = None
+    edgecolor: str | None = None
     linewidth: float | None = None
     linestyle: str | None = None
     marker: str | None = None
+    markersize: float | None = None
+    hatch: str | None = None
+    bar_width: float | None = None
     alpha: float | None = None
+    zorder: float | None = None
 
 
 class RedrawMetadata(BaseModel):
@@ -64,7 +71,10 @@ class RedrawMetadata(BaseModel):
     xlim: tuple[float, float] | None = None
     ylim: tuple[float, float] | None = None
     grid: bool = True
+    grid_axis: str | None = None
+    grid_alpha: float | None = None
     legend_title: str | None = None
+    legend_location: str | None = None
     bins: int | None = None
     figure: MatplotlibFigureAttributes = Field(default_factory=MatplotlibFigureAttributes)
     series: list[SeriesStyle] = Field(default_factory=list)

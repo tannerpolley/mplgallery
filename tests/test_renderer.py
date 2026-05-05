@@ -125,6 +125,38 @@ def test_render_cached_plot_reads_plot_ready_csv_instead_of_raw_csv(tmp_path: Pa
     assert image_path.read_bytes() == artifact_before
 
 
+def test_render_cached_plot_reuses_fresh_preview_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    image_path = touch(tmp_path / "plots" / "alpha.png", "original image")
+    data_path = tmp_path / "data" / "alpha.csv"
+    data_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"time_s": [0, 1, 2], "signal": [1.0, 1.5, 2.0]}).to_csv(data_path, index=False)
+    manifest = ProjectManifest.from_mapping(
+        {
+            "records": [
+                {
+                    "plot_path": "plots/alpha.png",
+                    "csv_path": "data/alpha.csv",
+                    "redraw": {"x": "time_s", "series": [{"y": "signal"}]},
+                }
+            ]
+        }
+    )
+    [record] = build_plot_records(scan_project(tmp_path), manifest=manifest)
+    rendered = render_cached_plot(tmp_path, record)
+    assert rendered.cache is not None
+    assert rendered.cache.cache_path is not None
+
+    def fail_render(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("fresh cache should avoid rerendering")
+
+    monkeypatch.setattr("mplgallery.core.renderer.render_matplotlib_figure", fail_render)
+    reused = render_cached_plot(tmp_path, record)
+
+    assert reused.cache is not None
+    assert reused.cache.cache_path == rendered.cache.cache_path
+    assert image_path.read_text() == "original image"
+
+
 def test_render_matplotlib_figure_applies_axes_figure_grid_and_series_styles() -> None:
     frame = pd.DataFrame({"time_s": [1.0, 2.0, 3.0], "signal": [2.0, 4.0, 8.0]})
     redraw = RedrawMetadata(
@@ -150,7 +182,9 @@ def test_render_matplotlib_figure_applies_axes_figure_grid_and_series_styles() -
                 "linewidth": 2.5,
                 "linestyle": "--",
                 "marker": "s",
+                "markersize": 9,
                 "alpha": 0.7,
+                "zorder": 3,
             }
         ],
     )
@@ -172,9 +206,48 @@ def test_render_matplotlib_figure_applies_axes_figure_grid_and_series_styles() -
         assert line.get_linewidth() == pytest.approx(2.5)
         assert line.get_linestyle() == "--"
         assert line.get_marker() == "s"
+        assert line.get_markersize() == pytest.approx(9)
         assert line.get_alpha() == pytest.approx(0.7)
+        assert line.get_zorder() == pytest.approx(3)
         assert ax.xaxis._major_tick_kw["gridOn"] is True
         assert ax.get_legend().get_title().get_text() == "Signals"
+    finally:
+        plt.close(fig)
+
+
+def test_render_matplotlib_figure_applies_bar_style_controls() -> None:
+    frame = pd.DataFrame({"category": [0, 1, 2], "count": [3, 5, 4]})
+    redraw = RedrawMetadata(
+        kind="bar",
+        x="category",
+        title="Styled bars",
+        grid=True,
+        grid_axis="y",
+        grid_alpha=0.4,
+        series=[
+            {
+                "y": "count",
+                "label": "Count",
+                "color": "#9467bd",
+                "edgecolor": "#17202f",
+                "linewidth": 0.8,
+                "hatch": "/",
+                "bar_width": 0.5,
+                "alpha": 0.65,
+            }
+        ],
+    )
+
+    fig, ax = render_matplotlib_figure(frame, redraw, fallback_title="Fallback")
+    try:
+        patch = ax.patches[0]
+        assert len(ax.patches) == 3
+        assert patch.get_hatch() == "/"
+        assert patch.get_linewidth() == pytest.approx(0.8)
+        assert patch.get_alpha() == pytest.approx(0.65)
+        assert patch.get_width() == pytest.approx(0.5)
+        assert ax.xaxis._major_tick_kw["gridOn"] is False
+        assert ax.yaxis._major_tick_kw["gridOn"] is True
     finally:
         plt.close(fig)
 
