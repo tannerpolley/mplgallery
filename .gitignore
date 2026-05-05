@@ -11,6 +11,8 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+!src/mplgallery/ui/frontend/dist/
+!src/mplgallery/ui/frontend/dist/**
 downloads/
 eggs/
 .eggs/
@@ -216,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+**/.mplgallery/cache/
+.playwright-cli/
+
+# Local IDE state
+.idea/
+
+# Bootstrap handoff copy kept at repo root by the initial Codex prompt
+/mplgallery_codex_bootstrap_master_plan.md
