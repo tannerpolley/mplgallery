@@ -12,7 +12,14 @@ const emptyPayload: BrowserPayload = {
   projectRoot: "",
   selectedPlotId: null,
   records: [],
-  options: { lineStyles: [], markers: [], scales: ["linear", "log", "symlog", "logit"] },
+  options: {
+    plotKinds: ["line", "scatter", "bar", "barh", "area", "hist", "step"],
+    lineStyles: [],
+    markers: [],
+    colors: [],
+    units: [],
+    scales: ["linear", "log", "symlog", "logit"],
+  },
   errors: {},
 };
 
@@ -22,6 +29,7 @@ function App(props: StreamlitProps) {
     payload.selectedPlotId ?? payload.records[0]?.id ?? null,
   );
   const [selectedFolder, setSelectedFolder] = useState(".");
+  const [checkedFolders, setCheckedFolders] = useState<Set<string>>(new Set(["."]));
   const [query, setQuery] = useState("");
   const [tileSize, setTileSize] = useState(230);
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -32,8 +40,8 @@ function App(props: StreamlitProps) {
 
   const tree = useMemo(() => buildTree(payload.records), [payload.records]);
   const visibleRecords = useMemo(
-    () => filterRecords(payload.records, query, selectedFolder),
-    [payload.records, query, selectedFolder],
+    () => filterRecords(payload.records, query, checkedFolders),
+    [payload.records, query, checkedFolders],
   );
   const selectedRecord =
     payload.records.find((record) => record.id === selectedPlotId) ?? payload.records[0] ?? null;
@@ -76,7 +84,25 @@ function App(props: StreamlitProps) {
         <Tree
           node={tree}
           selectedFolder={selectedFolder}
+          checkedFolders={checkedFolders}
           onSelectFolder={setSelectedFolder}
+          onToggleFolder={(path, checked) => {
+            setCheckedFolders((current) => {
+              const next = new Set(current);
+              if (path === ".") {
+                if (checked) return new Set(["."]);
+                next.delete(".");
+                return next;
+              }
+              if (checked) {
+                next.delete(".");
+                next.add(path);
+              } else {
+                next.delete(path);
+              }
+              return next;
+            });
+          }}
         />
       </aside>
 
@@ -147,11 +173,15 @@ function App(props: StreamlitProps) {
 function Tree({
   node,
   selectedFolder,
+  checkedFolders,
   onSelectFolder,
+  onToggleFolder,
 }: {
   node: TreeNode;
   selectedFolder: string;
+  checkedFolders: Set<string>;
   onSelectFolder: (path: string) => void;
+  onToggleFolder: (path: string, checked: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["."]));
 
@@ -176,6 +206,13 @@ function Tree({
           aria-selected={isSelected}
           aria-expanded={current.children.length ? isExpanded : undefined}
         >
+          <input
+            type="checkbox"
+            className="mg-tree-check"
+            aria-label={`Include ${current.label}`}
+            checked={checkedFolders.has(current.path)}
+            onChange={(event) => onToggleFolder(current.path, event.target.checked)}
+          />
           <button
             type="button"
             className="mg-tree-twisty"
@@ -284,6 +321,7 @@ function Inspector({
   const xlim = redraw.xlim ?? null;
   const ylim = redraw.ylim ?? null;
   const figure = redraw.figure ?? {};
+  const defaultColor = payload.options.colors[0]?.value ?? "#1f77b4";
 
   function updateRedraw(patch: RedrawMetadata) {
     setRedraw((current) => ({ ...current, ...patch }));
@@ -322,6 +360,16 @@ function Inspector({
       <details open>
         <summary>Axes</summary>
         <label>
+          Plot type
+          <select value={redraw.kind ?? "line"} onChange={(event) => updateRedraw({ kind: event.target.value })}>
+            {payload.options.plotKinds.map((kind) => (
+              <option key={kind} value={kind}>
+                {kind}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           Title
           <input value={redraw.title ?? ""} onChange={(event) => updateRedraw({ title: event.target.value })} />
         </label>
@@ -331,8 +379,36 @@ function Inspector({
             <input value={redraw.xlabel ?? ""} onChange={(event) => updateRedraw({ xlabel: event.target.value })} />
           </label>
           <label>
+            X unit
+            <select
+              value={redraw.xlabel_unit ?? ""}
+              onChange={(event) => updateRedraw({ xlabel_unit: event.target.value || undefined })}
+            >
+              <option value="">None</option>
+              {payload.options.units.map((unit) => (
+                <option key={unit} value={unit}>
+                  {unit}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Y label
             <input value={redraw.ylabel ?? ""} onChange={(event) => updateRedraw({ ylabel: event.target.value })} />
+          </label>
+          <label>
+            Y unit
+            <select
+              value={redraw.ylabel_unit ?? ""}
+              onChange={(event) => updateRedraw({ ylabel_unit: event.target.value || undefined })}
+            >
+              <option value="">None</option>
+              {payload.options.units.map((unit) => (
+                <option key={unit} value={unit}>
+                  {unit}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             X scale
@@ -365,6 +441,25 @@ function Inspector({
           value={ylim}
           onChange={(value) => updateRedraw({ ylim: value })}
         />
+        <label>
+          Legend title
+          <input
+            value={redraw.legend_title ?? ""}
+            onChange={(event) => updateRedraw({ legend_title: event.target.value })}
+          />
+        </label>
+        <label>
+          Histogram bins
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={redraw.bins ?? ""}
+            onChange={(event) =>
+              updateRedraw({ bins: event.target.value ? Number(event.target.value) : undefined })
+            }
+          />
+        </label>
       </details>
 
       <details>
@@ -427,56 +522,78 @@ function Inspector({
               Label
               <input value={style.label ?? ""} onChange={(event) => updateSeries(index, { label: event.target.value })} />
             </label>
-            <div className="mg-field-grid two">
-              <label>
-                Color
-                <input
-                  type="color"
-                  value={style.color ?? "#1f77b4"}
-                  onChange={(event) => updateSeries(index, { color: event.target.value })}
-                />
-              </label>
-              <label>
-                Width
-                <input
-                  type="number"
-                  step="0.1"
-                  value={style.linewidth ?? 1.5}
-                  onChange={(event) => updateSeries(index, { linewidth: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                Opacity
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={style.alpha ?? 1}
-                  onChange={(event) => updateSeries(index, { alpha: Number(event.target.value) })}
-                />
-                <span className="mg-inline-value">{style.alpha ?? 1}</span>
-              </label>
-              <label>
-                Line
-                <select value={style.linestyle ?? "-"} onChange={(event) => updateSeries(index, { linestyle: event.target.value })}>
+            <div className="mg-series-stack">
+              <div>
+                <div className="mg-label">Color</div>
+                <div className="mg-swatch-grid">
+                  {payload.options.colors.map((option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      className={`mg-swatch ${(style.color ?? defaultColor) === option.value ? "is-active" : ""}`}
+                      title={option.label}
+                      aria-label={option.label}
+                      style={{ background: option.value }}
+                      onClick={() => updateSeries(index, { color: option.value })}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="mg-field-grid two">
+                <label>
+                  Width
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={style.linewidth ?? 1.5}
+                    onChange={(event) => updateSeries(index, { linewidth: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  Opacity
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={style.alpha ?? 1}
+                    onChange={(event) => updateSeries(index, { alpha: Number(event.target.value) })}
+                  />
+                  <span className="mg-inline-value">{style.alpha ?? 1}</span>
+                </label>
+              </div>
+              <div>
+                <div className="mg-label">Line</div>
+                <div className="mg-choice-grid">
                   {payload.options.lineStyles.map((option) => (
-                    <option key={option.label} value={option.value}>
-                      {option.label}
-                    </option>
+                    <button
+                      type="button"
+                      key={option.value}
+                      className={`mg-choice ${(style.linestyle ?? "-") === option.value ? "is-active" : ""}`}
+                      onClick={() => updateSeries(index, { linestyle: option.value })}
+                    >
+                      <span className={`mg-line-sample is-${lineStyleClass(option.value)}`} />
+                      <span>{option.label}</span>
+                    </button>
                   ))}
-                </select>
-              </label>
-              <label>
-                Marker
-                <select value={style.marker ?? "o"} onChange={(event) => updateSeries(index, { marker: event.target.value })}>
+                </div>
+              </div>
+              <div>
+                <div className="mg-label">Marker</div>
+                <div className="mg-choice-grid">
                   {payload.options.markers.map((option) => (
-                    <option key={option.label} value={option.value}>
-                      {option.label}
-                    </option>
+                    <button
+                      type="button"
+                      key={option.value}
+                      className={`mg-choice ${(style.marker ?? "o") === option.value ? "is-active" : ""}`}
+                      onClick={() => updateSeries(index, { marker: option.value })}
+                    >
+                      <span className={`mg-marker-sample is-${markerClass(option.value)}`}>{markerGlyph(option.value)}</span>
+                      <span>{option.label}</span>
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              </div>
             </div>
           </fieldset>
         ))}
@@ -541,6 +658,67 @@ function LimitEditor({
       </div>
     </div>
   );
+}
+
+function lineStyleClass(value: string): string {
+  switch (value) {
+    case "--":
+      return "dashed";
+    case "-.":
+      return "dashdot";
+    case ":":
+      return "dotted";
+    case "":
+      return "none";
+    default:
+      return "solid";
+  }
+}
+
+function markerClass(value: string): string {
+  switch (value) {
+    case "s":
+      return "square";
+    case "D":
+      return "diamond";
+    case "^":
+      return "triangle-up";
+    case "v":
+      return "triangle-down";
+    case "x":
+      return "x";
+    case "+":
+      return "plus";
+    case ".":
+      return "point";
+    case "":
+      return "none";
+    default:
+      return "circle";
+  }
+}
+
+function markerGlyph(value: string): string {
+  switch (value) {
+    case "s":
+      return "■";
+    case "D":
+      return "◆";
+    case "^":
+      return "▲";
+    case "v":
+      return "▼";
+    case "x":
+      return "×";
+    case "+":
+      return "+";
+    case ".":
+      return "•";
+    case "":
+      return "○";
+    default:
+      return "●";
+  }
 }
 
 export default App;

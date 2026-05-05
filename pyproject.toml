@@ -30,7 +30,8 @@ dependencies = [
 dev = [
   "pytest>=8.0",
   "ruff>=0.5",
-  "mypy>=1.8"
+  "mypy>=1.8",
+  "build>=1.2"
 ]
 
 [project.scripts]

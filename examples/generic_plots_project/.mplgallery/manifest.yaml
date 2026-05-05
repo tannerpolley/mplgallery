@@ -1,0 +1,54 @@
+version: 1
+records:
+  - plot_path: plots/conversion.png
+    raw_csv_path: data/raw/conversion_raw.csv
+    plot_csv_path: data/plot_ready/conversion_plot.csv
+    redraw:
+      kind: line
+      x: elapsed_s
+      title: Conversion curve
+      xlabel: Elapsed time
+      xlabel_unit: $\mathrm{s}$
+      ylabel: Conversion
+      grid: true
+      figure:
+        width_inches: 6.0
+        height_inches: 4.0
+        dpi: 150
+      series:
+        - y: conversion
+          label: Model conversion
+          color: "#1f77b4"
+          linewidth: 1.8
+          linestyle: "-"
+          marker: "o"
+          alpha: 0.95
+        - y: reference
+          label: Reference fit
+          color: "#d62728"
+          linewidth: 1.8
+          linestyle: "--"
+          marker: ""
+          alpha: 0.9
+  - plot_path: plots/scatter.svg
+    raw_csv_path: data/raw/scatter_raw.csv
+    plot_csv_path: data/plot_ready/scatter_plot.csv
+    redraw:
+      kind: scatter
+      x: signal_x
+      title: Signal scatter
+      xlabel: Signal x
+      xlabel_unit: $\mu\mathrm{m}$
+      ylabel: Signal y
+      ylabel_unit: $\mu\mathrm{m}$
+      grid: true
+      figure:
+        width_inches: 6.0
+        height_inches: 4.0
+        dpi: 150
+      series:
+        - y: signal_y
+          label: Samples
+          color: "#2ca02c"
+          marker: "o"
+          alpha: 0.78

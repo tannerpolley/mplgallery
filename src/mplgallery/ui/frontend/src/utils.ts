@@ -39,11 +39,13 @@ export function buildTree(records: PlotRecord[]): TreeNode {
 export function filterRecords(
   records: PlotRecord[],
   query: string,
-  selectedFolder: string,
+  selectedFolders: Set<string>,
 ): PlotRecord[] {
   const normalized = query.trim().toLowerCase();
   return records.filter((record) => {
-    const folderMatch = foldersFor(record).includes(selectedFolder);
+    const folders = foldersFor(record);
+    const folderMatch =
+      selectedFolders.size === 0 || [...selectedFolders].some((folder) => folders.includes(folder));
     if (!folderMatch) return false;
     if (!normalized) return true;
     return [record.name, record.imagePath, record.csvPath, record.rawCsvPath]
@@ -60,12 +62,16 @@ export function normalizeRedraw(redraw: RedrawMetadata, series: SeriesStyle[]): 
     x: redraw.x,
     title: emptyToUndefined(redraw.title),
     xlabel: emptyToUndefined(redraw.xlabel),
+    xlabel_unit: emptyToUndefined(redraw.xlabel_unit),
     ylabel: emptyToUndefined(redraw.ylabel),
+    ylabel_unit: emptyToUndefined(redraw.ylabel_unit),
     xscale: redraw.xscale ?? "linear",
     yscale: redraw.yscale ?? "linear",
     xlim: redraw.xlim ?? null,
     ylim: redraw.ylim ?? null,
     grid: redraw.grid ?? true,
+    legend_title: emptyToUndefined(redraw.legend_title),
+    bins: redraw.bins ?? undefined,
     figure: {
       width_inches: Number(redraw.figure?.width_inches ?? 6),
       height_inches: Number(redraw.figure?.height_inches ?? 4),

@@ -1,0 +1,21 @@
+version: 1
+records:
+  - plot_path: plots/smoke.png
+    raw_csv_path: data/raw/smoke_raw.csv
+    plot_csv_path: data/plot_ready/smoke_plot.csv
+    redraw:
+      kind: line
+      x: x
+      title: Smoke test plot
+      xlabel: x
+      ylabel: y
+      grid: true
+      figure:
+        width_inches: 5.0
+        height_inches: 3.0
+        dpi: 140
+      series:
+        - y: y
+          label: Smoke
+          color: "#1f77b4"
+          marker: "o"

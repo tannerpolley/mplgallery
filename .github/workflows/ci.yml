@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Sync dependencies
+        run: uv sync --dev
+
+      - name: Run Python tests
+        run: uv run --no-sync pytest
+
+      - name: Run ruff
+        run: uv run --no-sync ruff check .
+
+      - name: Build wheel
+        run: uv run --no-sync python -m build
+
+      - name: Create isolated smoke environment
+        run: |
+          python -m venv .wheel-smoke-venv
+          .wheel-smoke-venv/bin/pip install --upgrade pip
+          .wheel-smoke-venv/bin/pip install dist/*.whl
+          .wheel-smoke-venv/bin/python -m mplgallery scan examples/install_smoke_project

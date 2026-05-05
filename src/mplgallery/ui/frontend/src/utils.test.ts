@@ -39,10 +39,10 @@ describe("component utilities", () => {
   });
 
   it("filters by folder and search text", () => {
-    expect(filterRecords(records, "alpha", ".").map((record) => record.id)).toEqual([
+    expect(filterRecords(records, "alpha", new Set(["."])).map((record) => record.id)).toEqual([
       "plots__alpha",
     ]);
-    expect(filterRecords(records, "", "nested").map((record) => record.id)).toEqual([
+    expect(filterRecords(records, "", new Set(["nested"])).map((record) => record.id)).toEqual([
       "nested__beta",
     ]);
   });

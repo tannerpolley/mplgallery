@@ -8,7 +8,7 @@ from pathlib import Path
 import streamlit as st
 
 from mplgallery.core.associations import build_plot_records
-from mplgallery.core.manifest import load_manifest
+from mplgallery.core.manifest import load_manifests
 from mplgallery.core.models import CacheMetadata, PlotRecord
 from mplgallery.core.renderer import render_cached_plot
 from mplgallery.core.scanner import scan_project
@@ -97,7 +97,7 @@ def _render_host_chrome(project_root: Path) -> None:
 
 def _load_records(project_root: Path) -> list[PlotRecord]:
     scan = scan_project(project_root)
-    manifest = load_manifest(project_root)
+    manifest = load_manifests(project_root)
     records = build_plot_records(scan, manifest=manifest)
     return _render_records(project_root, records)
 

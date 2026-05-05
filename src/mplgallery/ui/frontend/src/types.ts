@@ -4,12 +4,16 @@ export type RedrawMetadata = {
   y?: string[];
   title?: string;
   xlabel?: string;
+  xlabel_unit?: string;
   ylabel?: string;
+  ylabel_unit?: string;
   xscale?: string;
   yscale?: string;
   xlim?: [number, number] | null;
   ylim?: [number, number] | null;
   grid?: boolean;
+  legend_title?: string;
+  bins?: number;
   figure?: {
     width_inches?: number;
     height_inches?: number;
@@ -57,8 +61,11 @@ export type BrowserPayload = {
   selectedPlotId?: string | null;
   records: PlotRecord[];
   options: {
+    plotKinds: string[];
     lineStyles: SelectOption[];
     markers: SelectOption[];
+    colors: SelectOption[];
+    units: string[];
     scales: string[];
   };
   errors: Record<string, string>;

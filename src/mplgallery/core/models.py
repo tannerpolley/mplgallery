@@ -33,6 +33,13 @@ class MatplotlibFigureAttributes(BaseModel):
     dpi: int = 150
 
 
+class AxisMetadata(BaseModel):
+    label: str | None = None
+    unit: str | None = None
+    scale: str = "linear"
+    limits: tuple[float, float] | None = None
+
+
 class SeriesStyle(BaseModel):
     y: str
     label: str | None = None
@@ -49,12 +56,16 @@ class RedrawMetadata(BaseModel):
     y: list[str] = Field(default_factory=list)
     title: str | None = None
     xlabel: str | None = None
+    xlabel_unit: str | None = None
     ylabel: str | None = None
+    ylabel_unit: str | None = None
     xscale: str = "linear"
     yscale: str = "linear"
     xlim: tuple[float, float] | None = None
     ylim: tuple[float, float] | None = None
     grid: bool = True
+    legend_title: str | None = None
+    bins: int | None = None
     figure: MatplotlibFigureAttributes = Field(default_factory=MatplotlibFigureAttributes)
     series: list[SeriesStyle] = Field(default_factory=list)
 

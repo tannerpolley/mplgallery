@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mplgallery.core.associations import build_plot_records
-from mplgallery.core.manifest import ProjectManifest, load_manifest, update_manifest_redraw
+from mplgallery.core.manifest import ProjectManifest, load_manifest, load_manifests, update_manifest_redraw
 from mplgallery.core.models import RedrawMetadata
 from mplgallery.core.scanner import scan_project
 
@@ -135,3 +135,52 @@ records:
     assert "plot_csv_path: data/plot_ready/alpha_plot.csv" in serialized
     assert raw_path.read_bytes() == raw_before
     assert artifact_path.read_bytes() == artifact_before
+
+
+def test_nested_manifests_are_loaded_from_parent_scan_root(tmp_path: Path) -> None:
+    project_a = tmp_path / "project_a"
+    project_b = tmp_path / "project_b"
+    touch(project_a / "plots" / "alpha.png")
+    touch(project_a / "data" / "plot_ready" / "alpha_plot.csv", "x,y\n0,1\n")
+    touch(project_b / "plots" / "beta.svg")
+    touch(project_b / "data" / "plot_ready" / "beta_plot.csv", "x,z\n0,2\n")
+    (project_a / ".mplgallery").mkdir(parents=True)
+    (project_b / ".mplgallery").mkdir(parents=True)
+    (project_a / ".mplgallery" / "manifest.yaml").write_text(
+        """
+version: 1
+records:
+  - plot_path: plots/alpha.png
+    plot_csv_path: data/plot_ready/alpha_plot.csv
+    redraw:
+      x: x
+      series:
+        - y: y
+""".lstrip()
+    )
+    (project_b / ".mplgallery" / "manifest.yaml").write_text(
+        """
+version: 1
+records:
+  - plot_path: plots/beta.svg
+    plot_csv_path: data/plot_ready/beta_plot.csv
+    redraw:
+      kind: scatter
+      x: x
+      series:
+        - y: z
+""".lstrip()
+    )
+
+    records = build_plot_records(scan_project(tmp_path), manifest=load_manifests(tmp_path))
+
+    assert [record.image.relative_path.as_posix() for record in records] == [
+        "project_a/plots/alpha.png",
+        "project_b/plots/beta.svg",
+    ]
+    assert records[0].plot_csv is not None
+    assert records[0].plot_csv.relative_path.as_posix() == "project_a/data/plot_ready/alpha_plot.csv"
+    assert records[1].plot_csv is not None
+    assert records[1].plot_csv.relative_path.as_posix() == "project_b/data/plot_ready/beta_plot.csv"
+    assert records[1].redraw is not None
+    assert records[1].redraw.kind == "scatter"

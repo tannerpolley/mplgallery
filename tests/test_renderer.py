@@ -57,6 +57,36 @@ def test_render_cached_plot_reads_csv_with_pandas_and_preserves_original(tmp_pat
     assert image_path.read_text() == "original image"
 
 
+def test_render_cached_plot_uses_svg_cache_for_svg_artifacts(tmp_path: Path) -> None:
+    image_path = touch(tmp_path / "plots" / "alpha.svg", "<svg></svg>")
+    data_path = tmp_path / "data" / "alpha.csv"
+    data_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"time_s": [0, 1, 2], "value": [1.0, 1.5, 2.0]}).to_csv(
+        data_path,
+        index=False,
+    )
+    manifest = ProjectManifest.from_mapping(
+        {
+            "records": [
+                {
+                    "plot_path": "plots/alpha.svg",
+                    "csv_path": "data/alpha.csv",
+                    "redraw": {"x": "time_s", "series": [{"y": "value"}]},
+                }
+            ]
+        }
+    )
+    [record] = build_plot_records(scan_project(tmp_path), manifest=manifest)
+
+    updated = render_cached_plot(tmp_path, record)
+
+    assert updated.cache is not None
+    assert updated.cache.cache_path is not None
+    assert updated.cache.cache_path.exists()
+    assert updated.cache.cache_path.suffix == ".svg"
+    assert image_path.read_text() == "<svg></svg>"
+
+
 def test_render_cached_plot_reads_plot_ready_csv_instead_of_raw_csv(tmp_path: Path) -> None:
     raw_path = tmp_path / "data" / "raw" / "alpha_raw.csv"
     plot_csv_path = tmp_path / "data" / "plot_ready" / "alpha_plot.csv"
@@ -102,12 +132,15 @@ def test_render_matplotlib_figure_applies_axes_figure_grid_and_series_styles() -
         x="time_s",
         title="Styled Plot",
         xlabel="Elapsed time",
+        xlabel_unit=r"$\mathrm{s}$",
         ylabel="Response",
+        ylabel_unit=r"$\mathrm{V}$",
         xscale="linear",
         yscale="log",
         xlim=(1.0, 3.0),
         ylim=(1.0, 10.0),
         grid=True,
+        legend_title="Signals",
         figure={"width_inches": 5.5, "height_inches": 3.25, "dpi": 180},
         series=[
             {
@@ -126,8 +159,8 @@ def test_render_matplotlib_figure_applies_axes_figure_grid_and_series_styles() -
     try:
         line = ax.get_lines()[0]
         assert ax.get_title() == "Styled Plot"
-        assert ax.get_xlabel() == "Elapsed time"
-        assert ax.get_ylabel() == "Response"
+        assert ax.get_xlabel() == r"Elapsed time ($\mathrm{s}$)"
+        assert ax.get_ylabel() == r"Response ($\mathrm{V}$)"
         assert ax.get_xscale() == "linear"
         assert ax.get_yscale() == "log"
         assert ax.get_xlim() == pytest.approx((1.0, 3.0))
@@ -141,5 +174,37 @@ def test_render_matplotlib_figure_applies_axes_figure_grid_and_series_styles() -
         assert line.get_marker() == "s"
         assert line.get_alpha() == pytest.approx(0.7)
         assert ax.xaxis._major_tick_kw["gridOn"] is True
+        assert ax.get_legend().get_title().get_text() == "Signals"
+    finally:
+        plt.close(fig)
+
+
+def test_render_matplotlib_figure_supports_histogram_and_scatter_variants() -> None:
+    hist_frame = pd.DataFrame({"residual": [0.1, 0.2, -0.1, 0.3, 0.0]})
+    hist_redraw = RedrawMetadata(
+        kind="hist",
+        title="Histogram",
+        xlabel="Residual",
+        xlabel_unit=r"$\mathrm{mV}$",
+        bins=8,
+        series=[{"y": "residual", "color": "#ff7f0e", "alpha": 0.8}],
+    )
+    fig, ax = render_matplotlib_figure(hist_frame, hist_redraw, fallback_title="Fallback")
+    try:
+        assert ax.get_title() == "Histogram"
+        assert ax.get_xlabel() == r"Residual ($\mathrm{mV}$)"
+    finally:
+        plt.close(fig)
+
+    scatter_frame = pd.DataFrame({"x": [0, 1, 2], "y": [1.0, 1.2, 1.5]})
+    scatter_redraw = RedrawMetadata(
+        kind="scatter",
+        x="x",
+        series=[{"y": "y", "label": "Points", "color": "#2ca02c", "marker": "o", "alpha": 0.9}],
+    )
+    fig, ax = render_matplotlib_figure(scatter_frame, scatter_redraw, fallback_title="Fallback")
+    try:
+        assert ax.collections
+        assert ax.get_legend().get_texts()[0].get_text() == "Points"
     finally:
         plt.close(fig)

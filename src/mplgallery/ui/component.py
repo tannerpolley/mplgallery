@@ -13,6 +13,7 @@ import streamlit.components.v1 as components
 from pydantic import BaseModel, ValidationError
 
 from mplgallery.core.models import PlotRecord, RedrawMetadata, SeriesStyle
+from mplgallery.core.renderer import DEFAULT_COLOR_CYCLE, LATEX_UNIT_SUGGESTIONS, PLOT_KIND_CHOICES
 
 
 LINESTYLE_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -86,8 +87,14 @@ def build_component_payload(
         "selectedPlotId": selected,
         "records": [_record_payload(record) for record in records],
         "options": {
+            "plotKinds": list(PLOT_KIND_CHOICES),
             "lineStyles": [{"value": value, "label": label} for value, label in LINESTYLE_OPTIONS],
             "markers": [{"value": value, "label": label} for value, label in MARKER_OPTIONS],
+            "colors": [
+                {"value": color, "label": f"Matplotlib {index + 1}"}
+                for index, color in enumerate(DEFAULT_COLOR_CYCLE)
+            ],
+            "units": [unit for unit in LATEX_UNIT_SUGGESTIONS if unit],
             "scales": list(SCALE_OPTIONS),
         },
         "errors": errors or {},
@@ -173,6 +180,7 @@ def _record_payload(record: PlotRecord) -> dict[str, Any]:
         "editable": bool(record.redraw and source_csv),
         "redraw": redraw.model_dump(mode="json", exclude_none=True),
         "series": [style.model_dump(mode="json", exclude_none=True) for style in _series_for_editor(record)],
+        "plotKind": redraw.kind,
     }
 
 

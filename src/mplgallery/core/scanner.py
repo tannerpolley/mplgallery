@@ -62,7 +62,7 @@ def _should_ignore_dir(path: Path, root: Path) -> bool:
     name = path.name
     relative_parts = path.relative_to(root).parts
 
-    if len(relative_parts) >= 2 and relative_parts[0] == ".mplgallery" and relative_parts[1] == "cache":
+    if len(relative_parts) >= 2 and relative_parts[-2] == ".mplgallery" and relative_parts[-1] == "cache":
         return True
     if name in DEFAULT_IGNORE_DIRS:
         return True

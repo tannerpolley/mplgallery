@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from mplgallery.core.associations import build_plot_records
-from mplgallery.core.manifest import load_manifest
+from mplgallery.core.manifest import load_manifests
 from mplgallery.core.scanner import scan_project
 
 app = typer.Typer(help="Browse and manage Matplotlib-generated plot galleries.")
@@ -17,7 +17,7 @@ app = typer.Typer(help="Browse and manage Matplotlib-generated plot galleries.")
 def scan(project_root: Path = typer.Argument(Path("."), help="Project directory to scan.")) -> None:
     """Scan a project for PNG/SVG plots and CSV data."""
     result = scan_project(project_root)
-    manifest = load_manifest(result.project_root)
+    manifest = load_manifests(result.project_root)
     records = build_plot_records(result, manifest=manifest)
 
     matched = sum(1 for record in records if record.csv is not None)

@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Sync dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run --no-sync pytest
+
+      - name: Run ruff
+        run: uv run --no-sync ruff check .
+
+      - name: Build package
+        run: uv run --no-sync python -m build
+
+      - name: Smoke install wheel
+        run: |
+          python -m venv .wheel-smoke-venv
+          .wheel-smoke-venv/bin/pip install --upgrade pip
+          .wheel-smoke-venv/bin/pip install dist/*.whl
+          .wheel-smoke-venv/bin/python -m mplgallery scan examples/install_smoke_project
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mplgallery-dist
+          path: dist/*
+
+      - name: Publish GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG_NAME" dist/* --generate-notes --title "$TAG_NAME" \
+            || gh release upload "$TAG_NAME" dist/* --clobber

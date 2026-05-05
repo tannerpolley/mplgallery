@@ -45,9 +45,9 @@ summary:focus-visible {
 
 .mg-shell {
   display: grid;
-  grid-template-columns: clamp(130px, 18vw, 220px) minmax(300px, 1fr) clamp(200px, 24vw, 300px);
-  gap: 8px;
-  min-height: 760px;
+  grid-template-columns: clamp(150px, 14vw, 205px) minmax(0, 1.55fr) clamp(220px, 18vw, 320px);
+  gap: 10px;
+  min-height: max(760px, calc(100vh - 130px));
   padding: 2px;
 }
 
@@ -90,7 +90,7 @@ summary:focus-visible {
 .mg-tree-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-height: 28px;
   border-radius: 6px;
 }
@@ -114,6 +114,13 @@ summary:focus-visible {
   opacity: 0.25;
 }
 
+.mg-tree-check {
+  width: 14px;
+  height: 14px;
+  margin: 0 2px 0 4px;
+  accent-color: var(--mg-accent);
+}
+
 .mg-tree-label {
   display: flex;
   flex: 1;
@@ -134,7 +141,7 @@ summary:focus-visible {
 
 .mg-workspace {
   display: grid;
-  grid-template-rows: auto minmax(320px, 1fr) auto;
+  grid-template-rows: auto minmax(420px, 1.15fr) minmax(180px, 0.85fr);
   overflow: hidden;
 }
 
@@ -173,10 +180,10 @@ summary:focus-visible {
 
 .mg-canvas {
   display: grid;
-  align-content: center;
-  justify-items: center;
-  min-height: 370px;
-  padding: 18px;
+  align-content: start;
+  justify-items: stretch;
+  min-height: 420px;
+  padding: 16px 18px 18px;
   background:
     linear-gradient(#fff, #fff) padding-box,
     repeating-linear-gradient(45deg, #f3f5f8 0 10px, #fff 10px 20px) border-box;
@@ -184,8 +191,9 @@ summary:focus-visible {
 
 .mg-canvas img {
   display: block;
-  max-width: 100%;
-  max-height: 440px;
+  width: 100%;
+  max-width: min(100%, 1100px);
+  max-height: 58vh;
   object-fit: contain;
 }
 
@@ -196,7 +204,7 @@ summary:focus-visible {
 }
 
 .mg-gallery {
-  min-height: 230px;
+  min-height: 180px;
   border-top: 1px solid var(--mg-line);
   background: var(--mg-panel-soft);
   overflow: auto;
@@ -365,6 +373,11 @@ input[type="checkbox"] {
   align-items: center;
 }
 
+.mg-series-stack {
+  display: grid;
+  gap: 9px;
+}
+
 .mg-series {
   border: 1px solid var(--mg-line);
   border-radius: 8px;
@@ -380,6 +393,93 @@ input[type="checkbox"] {
 .mg-inline-value {
   color: var(--mg-muted);
   font-size: 11px;
+}
+
+.mg-swatch-grid,
+.mg-choice-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mg-swatch {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  padding: 0;
+}
+
+.mg-swatch.is-active {
+  border-color: var(--mg-accent);
+  box-shadow: 0 0 0 2px rgba(37, 111, 143, 0.16);
+}
+
+.mg-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--mg-line-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--mg-ink);
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.mg-choice.is-active {
+  border-color: var(--mg-accent);
+  background: var(--mg-accent-soft);
+}
+
+.mg-line-sample {
+  display: inline-block;
+  width: 30px;
+  height: 0;
+  border-bottom: 2px solid var(--mg-ink);
+}
+
+.mg-line-sample.is-dashed {
+  border-bottom-style: dashed;
+}
+
+.mg-line-sample.is-dashdot {
+  border-bottom-style: dashed;
+  position: relative;
+}
+
+.mg-line-sample.is-dashdot::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--mg-ink);
+}
+
+.mg-line-sample.is-dotted {
+  border-bottom-style: dotted;
+}
+
+.mg-line-sample.is-none {
+  border-bottom: 0;
+}
+
+.mg-marker-sample {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--mg-ink);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.mg-marker-sample.is-none {
+  color: var(--mg-muted);
 }
 
 .mg-provenance {
@@ -429,13 +529,21 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
-@media (max-width: 620px) {
+@media (max-width: 980px) {
   .mg-shell {
     grid-template-columns: 1fr;
   }
 
   .mg-tree-panel,
   .mg-inspector {
-    max-height: 300px;
+    max-height: 320px;
+  }
+
+  .mg-workspace {
+    grid-template-rows: auto minmax(300px, auto) minmax(180px, auto);
+  }
+
+  .mg-canvas img {
+    max-height: 42vh;
   }
 }
