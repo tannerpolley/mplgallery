@@ -29,7 +29,7 @@ pip install mplgallery-*.whl
 
 ```bash
 uv sync --dev
-uv run mplgallery serve examples/sample_project
+uv run mplgallery run examples/sample_project
 ```
 
 Optional DVC and MLflow integrations are not installed by default:
@@ -41,10 +41,13 @@ pip install "mplgallery[dvc,mlflow]"
 ## Run against a project
 
 ```bash
-mplgallery serve /path/to/project
+cd /path/to/project
+mplgallery run
 ```
 
-`serve` is CSV-first by default. Existing PNG/SVG files are not scanned into the
+`run` is an alias for `serve` and is intended as the simple installed-package
+entrypoint: run it from the analysis/project root and MPLGallery starts the
+local Streamlit CSV Plot Studio. Existing PNG/SVG files are not scanned into the
 main gallery unless you explicitly opt into artifact/reference mode.
 
 ## Scan a project
@@ -161,7 +164,7 @@ Existing PNG/SVG browsing is explicit reference mode:
 ```bash
 mplgallery import-artifacts /path/to/project/legacy/plots
 mplgallery scan /path/to/project --include-artifacts
-mplgallery serve /path/to/project --include-artifacts
+mplgallery run /path/to/project --include-artifacts
 ```
 
 Curated images in `results/final/figures/` are shown as reference-only records
@@ -221,7 +224,7 @@ Axis units can use plain text or latex/mathtext strings such as
 To browse every included example project in one app:
 
 ```bash
-uv run mplgallery serve examples
+uv run mplgallery run examples
 ```
 
 Regenerate an example project with its local scripts if you want to refresh the
@@ -240,11 +243,15 @@ To verify the package works in a separate environment:
 uv run --no-sync python -m build
 python -m venv .wheel-smoke-venv
 .wheel-smoke-venv\Scripts\pip install dist\*.whl
-.wheel-smoke-venv\Scripts\mplgallery.exe scan examples/install_smoke_project
+cd examples\install_smoke_project
+..\..\.wheel-smoke-venv\Scripts\mplgallery.exe run --help
+..\..\.wheel-smoke-venv\Scripts\mplgallery.exe scan . --json
 ```
 
 The wheel must include `mplgallery/ui/frontend/dist/index.html`; source
-`node_modules` are intentionally not packaged.
+`node_modules` are intentionally not packaged. CI also installs the built wheel
+into a clean environment, creates a CSV-only external project, runs the
+installed `mplgallery` console command, and briefly starts `mplgallery run`.
 
 ## Development
 
