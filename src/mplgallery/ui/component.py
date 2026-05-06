@@ -324,6 +324,12 @@ def _clear_plot_error(plot_id: str) -> None:
 
 
 def _remove_cached_preview(project_root: Path, record: PlotRecord) -> None:
+    if record.cache and record.cache.cache_path is not None:
+        record.cache.cache_path.unlink(missing_ok=True)
+        record.cache.cache_path.with_name(f"{record.cache.cache_path.name}.meta.json").unlink(
+            missing_ok=True
+        )
+        return
     suffix = record.image.suffix.lower() if record.image.suffix.lower() in {".png", ".svg"} else ".png"
     cache_path = project_root / ".mplgallery" / "cache" / f"{record.plot_id}{suffix}"
     cache_path.unlink(missing_ok=True)

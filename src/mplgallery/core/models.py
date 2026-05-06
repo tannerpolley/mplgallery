@@ -145,6 +145,47 @@ class ScanResult(BaseModel):
         return [file for file in self.files if file.kind is FileKind.CSV]
 
 
+class DatasetRecord(BaseModel):
+    path: Path
+    relative_path: Path
+    csv_root: Path
+    csv_root_relative_path: Path
+    row_count_sampled: int = 0
+    columns: list[str] = Field(default_factory=list)
+    numeric_columns: list[str] = Field(default_factory=list)
+    categorical_columns: list[str] = Field(default_factory=list)
+    draft_status: str = "not_initialized"
+    recipe_path: Path | None = None
+    plot_ready_path: Path | None = None
+    cache_path: Path | None = None
+
+
+class CSVRootRecord(BaseModel):
+    path: Path
+    relative_path: Path
+    datasets: list[DatasetRecord] = Field(default_factory=list)
+
+
+class PlotRecipeRecord(BaseModel):
+    version: int = 1
+    source_csv_path: Path
+    plot_ready_path: Path
+    cache_path: Path
+    script_path: Path
+    redraw: RedrawMetadata
+    status: str = "draft"
+    sample_rows: int | None = None
+
+
+class CSVStudioIndex(BaseModel):
+    project_root: Path
+    csv_roots: list[CSVRootRecord] = Field(default_factory=list)
+    datasets: list[DatasetRecord] = Field(default_factory=list)
+    records: list["PlotRecord"] = Field(default_factory=list)
+    ignored_dir_count: int = 0
+    imported_artifacts: list["PlotRecord"] = Field(default_factory=list)
+
+
 class ManifestRecord(BaseModel):
     plot_path: Path
     raw_csv_path: Path | None = None

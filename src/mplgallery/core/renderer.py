@@ -74,9 +74,8 @@ def render_cached_plot(project_root: Path | str, record: PlotRecord) -> PlotReco
     frame = pd.read_csv(source_csv.path)
     fig, _ax = render_matplotlib_figure(frame, record.redraw, fallback_title=record.image.stem)
     try:
-        cache_dir = root / ".mplgallery" / "cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = _cache_path_for_record(root, record)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         fig.tight_layout()
         fig.savefig(cache_path)
         _write_cache_metadata(cache_path, record)
@@ -131,6 +130,10 @@ def record_with_fresh_cache(project_root: Path | str, record: PlotRecord) -> Plo
 
 
 def _cache_path_for_record(project_root: Path, record: PlotRecord) -> Path:
+    if record.cache and record.cache.cache_path is not None:
+        return record.cache.cache_path
+    if ".mplgallery" in record.image.relative_path.parts:
+        return project_root / record.image.relative_path
     cache_suffix = record.image.suffix.lower() if record.image.suffix.lower() in {".png", ".svg"} else ".png"
     return project_root / ".mplgallery" / "cache" / f"{record.plot_id}{cache_suffix}"
 

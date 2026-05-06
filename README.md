@@ -1,7 +1,10 @@
 # mplgallery
 
-`mplgallery` is a local-first Matplotlib plot gallery for projects that generate
-PNG/SVG plots from CSV data.
+`mplgallery` is a local-first CSV Plot Studio for Python analysis projects. It
+expects an opinionated analysis layout, discovers CSV tables under `data/` and
+other output folders, drafts editable Matplotlib plots, and stores
+MPLGallery-owned recipes, scripts, plot-ready CSVs, and cached previews inside a
+colocated `.mplgallery/` folder.
 
 The package is for plot appearance only. It does not tune, fit, optimize, or
 alter scientific/model computations.
@@ -40,6 +43,9 @@ pip install "mplgallery[dvc,mlflow]"
 mplgallery serve /path/to/project
 ```
 
+`serve` is CSV-first by default. Existing PNG/SVG files are not scanned into the
+main gallery unless you explicitly opt into artifact/reference mode.
+
 ## Scan a project
 
 ```bash
@@ -48,9 +54,83 @@ mplgallery scan /path/to/project --json
 mplgallery validate /path/to/project
 ```
 
-`validate` reports manifest references to missing generated plot images or CSV
-files so ignored/generated artifact workflows fail with a clear diagnostic
-instead of an empty gallery.
+`scan` reports discovered CSV roots and draft status without importing arbitrary
+PNG/SVG files. `validate` reports manifest references to missing generated plot
+images or CSV files so ignored/generated artifact workflows fail with a clear
+diagnostic instead of an empty gallery.
+
+## CSV Plot Studio Workflow
+
+```text
+analysis_project/
+  scripts/
+  data/
+    input/
+    raw/
+    processed/
+    .mplgallery/
+      manifest.yaml
+      recipes/
+      scripts/
+      plot_ready/
+      cache/
+  out/
+    plots/
+    reports/
+  config/
+```
+
+Source CSVs are immutable inputs. MPLGallery may sample/copy data into
+`.mplgallery/plot_ready/` and render cached previews into `.mplgallery/cache/`,
+but it does not edit source CSVs and does not run or manage whatever code
+created them.
+
+The expected personal project layout is:
+
+```text
+analysis_name/
+  scripts/           # your data-generation and analysis scripts; MPLGallery does not run them
+  data/input/        # optional upstream inputs
+  data/raw/          # raw outputs from scripts/models/functions
+  data/processed/    # cleaned or analysis-ready tables
+  out/plots/         # generated PNG/SVG references, imported explicitly when needed
+  out/reports/       # optional generated reports/tables
+  config/            # optional project configuration
+```
+
+By default, `serve` uses CSV tables under the discovered data/output roots and
+does not scan arbitrary PNG/SVG files into the gallery. `out/plots` is treated as
+the conventional place to import reference artifacts with `import-artifacts`.
+
+Initialize a CSV folder without rendering:
+
+```bash
+mplgallery init /path/to/project/data
+```
+
+Create draft recipes, generated render scripts, plot-ready CSVs, and cached SVG
+previews:
+
+```bash
+mplgallery draft /path/to/project/data
+mplgallery draft /path/to/project/data --json
+```
+
+Drafting infers numeric columns, chooses a simple initial plot type, writes YAML
+recipes, and keeps generated artifacts under that folder's `.mplgallery/`
+workspace.
+
+## Import Existing Images As References
+
+Existing PNG/SVG browsing is explicit reference mode:
+
+```bash
+mplgallery import-artifacts /path/to/project/out/plots
+mplgallery scan /path/to/project --include-artifacts
+mplgallery serve /path/to/project --include-artifacts
+```
+
+Imported images remain reference-only unless a CSV-backed recipe is added.
 
 ## Import Existing Plot Manifests
 
@@ -92,22 +172,6 @@ only:
 
 Axis units can use plain text or latex/mathtext strings such as
 `$\mathrm{s}$`, `$\mu\mathrm{m}$`, or `$^\circ\mathrm{C}$`.
-
-## Recommended Analysis Group Layout
-
-```text
-analysis_group/
-  data/raw/
-  data/plot_ready/
-  plots/
-  scripts/generate_data.py
-  scripts/render_plots.py
-  .mplgallery/manifest.yaml
-  .mplgallery/cache/
-```
-
-Use `raw_csv_path` for immutable model/function outputs and `plot_csv_path` for
-the CSV that MPLGallery reads with pandas for previews and metadata editing.
 
 ## Example Projects
 

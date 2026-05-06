@@ -1,4 +1,4 @@
-"""Streamlit application entry point for the local artifact browser."""
+"""Streamlit application entry point for the local CSV plot studio."""
 
 from __future__ import annotations
 
@@ -7,11 +7,9 @@ from pathlib import Path
 
 import streamlit as st
 
-from mplgallery.core.associations import build_plot_records
-from mplgallery.core.manifest import load_manifests
 from mplgallery.core.models import CacheMetadata, PlotRecord
 from mplgallery.core.renderer import render_cached_plot
-from mplgallery.core.scanner import scan_project
+from mplgallery.core.studio import build_csv_studio_index
 from mplgallery.ui.component import (
     build_component_payload,
     component_errors,
@@ -28,7 +26,7 @@ def main() -> None:
     _render_host_chrome(project_root)
 
     try:
-        records = _load_records(project_root)
+        records = _load_records(project_root, include_artifacts=args.include_artifacts)
     except Exception as exc:  # pragma: no cover - Streamlit display path
         st.error(f"Unable to scan project: {exc}")
         return
@@ -49,6 +47,7 @@ def main() -> None:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", type=Path, default=Path("."))
+    parser.add_argument("--include-artifacts", action="store_true")
     return parser.parse_args()
 
 
@@ -100,10 +99,13 @@ def _render_host_chrome(project_root: Path) -> None:
     st.caption(str(project_root))
 
 
-def _load_records(project_root: Path) -> list[PlotRecord]:
-    scan = scan_project(project_root)
-    manifest = load_manifests(project_root)
-    records = build_plot_records(scan, manifest=manifest)
+def _load_records(project_root: Path, *, include_artifacts: bool = False) -> list[PlotRecord]:
+    index = build_csv_studio_index(
+        project_root,
+        ensure_drafts=True,
+        include_artifacts=include_artifacts,
+    )
+    records = index.records
     return _render_records(project_root, records)
 
 

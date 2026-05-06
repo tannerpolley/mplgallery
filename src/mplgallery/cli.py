@@ -7,10 +7,14 @@ from pathlib import Path
 
 import typer
 
-from mplgallery.core.associations import build_plot_records
 from mplgallery.core.importers import import_epcsaft_manifest
-from mplgallery.core.manifest import diagnose_manifest_references, load_manifests
-from mplgallery.core.scanner import scan_project
+from mplgallery.core.manifest import diagnose_manifest_references
+from mplgallery.core.studio import (
+    build_csv_studio_index,
+    draft_csv_root,
+    import_artifact_references,
+    init_csv_root,
+)
 
 app = typer.Typer(help="Browse and manage Matplotlib-generated plot galleries.")
 
@@ -19,23 +23,54 @@ app = typer.Typer(help="Browse and manage Matplotlib-generated plot galleries.")
 def scan(
     project_root: Path = typer.Argument(Path("."), help="Project directory to scan."),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+    include_artifacts: bool = typer.Option(
+        False,
+        "--include-artifacts",
+        help="Also include legacy PNG/SVG artifact-browser records.",
+    ),
 ) -> None:
-    """Scan a project for PNG/SVG plots and CSV data."""
-    result = scan_project(project_root)
-    manifest = load_manifests(result.project_root)
-    records = build_plot_records(result, manifest=manifest)
-    diagnostics = diagnose_manifest_references(result.project_root, manifest)
+    """Scan a project for CSV roots and MPLGallery draft plot state."""
+    index = build_csv_studio_index(project_root, include_artifacts=include_artifacts)
+    diagnostics = diagnose_manifest_references(index.project_root)
 
-    matched = sum(1 for record in records if record.csv is not None)
+    matched = sum(1 for record in index.records if record.csv is not None)
     if json_output:
         typer.echo(
             json.dumps(
                 {
-                    "project_root": str(result.project_root),
-                    "files_discovered": len(result.files),
-                    "plots_discovered": len(records),
+                    "mode": "csv-studio",
+                    "project_root": str(index.project_root),
+                    "csv_roots": [
+                        {
+                            "path": str(root.path),
+                            "relative_path": root.relative_path.as_posix(),
+                            "datasets": len(root.datasets),
+                        }
+                        for root in index.csv_roots
+                    ],
+                    "datasets": [
+                        {
+                            "path": str(dataset.path),
+                            "relative_path": dataset.relative_path.as_posix(),
+                            "csv_root": dataset.csv_root_relative_path.as_posix(),
+                            "draft_status": dataset.draft_status,
+                            "recipe_path": dataset.recipe_path.as_posix()
+                            if dataset.recipe_path
+                            else None,
+                            "plot_ready_path": dataset.plot_ready_path.as_posix()
+                            if dataset.plot_ready_path
+                            else None,
+                            "cache_path": dataset.cache_path.as_posix()
+                            if dataset.cache_path
+                            else None,
+                        }
+                        for dataset in index.datasets
+                    ],
+                    "files_discovered": len(index.datasets),
+                    "plots_discovered": len(index.records),
                     "plots_matched_to_csv": matched,
-                    "ignored_directories": result.ignored_dir_count,
+                    "ignored_directories": index.ignored_dir_count,
+                    "artifact_records": len(index.imported_artifacts),
                     "manifest_records": diagnostics.manifest_record_count,
                     "missing_plot_paths": [
                         path.as_posix() for path in diagnostics.missing_plot_paths
@@ -46,10 +81,19 @@ def scan(
                             "plot_id": record.plot_id,
                             "plot_path": record.image.relative_path.as_posix(),
                             "csv_path": record.csv.relative_path.as_posix() if record.csv else None,
+                            "raw_csv_path": record.raw_csv.relative_path.as_posix()
+                            if record.raw_csv
+                            else None,
+                            "plot_csv_path": record.plot_csv.relative_path.as_posix()
+                            if record.plot_csv
+                            else None,
+                            "recipe_path": record.recipe_path.as_posix()
+                            if record.recipe_path
+                            else None,
                             "confidence": record.association_confidence.value,
                             "reason": record.association_reason,
                         }
-                        for record in records
+                        for record in index.records
                     ],
                 },
                 indent=2,
@@ -57,10 +101,12 @@ def scan(
         )
         return
 
-    typer.echo(f"Project: {result.project_root}")
-    typer.echo(f"Files: {len(result.files)} discovered")
-    typer.echo(f"Plots: {len(records)} discovered, {matched} matched to CSV")
-    typer.echo(f"Ignored directories: {result.ignored_dir_count}")
+    typer.echo(f"Project: {index.project_root}")
+    typer.echo("Mode: CSV Plot Studio")
+    typer.echo(f"CSV roots: {len(index.csv_roots)}")
+    typer.echo(f"Datasets: {len(index.datasets)}")
+    typer.echo(f"Plots: {len(index.records)} discovered, {matched} matched to CSV")
+    typer.echo(f"Ignored directories: {index.ignored_dir_count}")
     if diagnostics.missing_plot_paths:
         typer.echo(
             "Warning: manifest references "
@@ -72,12 +118,68 @@ def scan(
             f"{len(diagnostics.missing_csv_paths)} missing CSV file(s)."
         )
 
-    for record in records:
+    for dataset in index.datasets:
+        typer.echo(f"- dataset: {dataset.relative_path.as_posix()} ({dataset.draft_status})")
+    for record in index.records:
         csv_path = record.csv.relative_path.as_posix() if record.csv else "unmatched"
         typer.echo(
             f"- {record.plot_id}: {record.image.relative_path.as_posix()} -> {csv_path} "
             f"({record.association_confidence.value}; {record.association_reason})"
         )
+
+
+@app.command()
+def init(
+    data_folder: Path = typer.Argument(..., help="CSV data/out/results folder to initialize."),
+) -> None:
+    """Create the `.mplgallery` workspace beside a CSV folder without rendering."""
+    workspace = init_csv_root(data_folder)
+    typer.echo(f"Workspace: {workspace.root}")
+    typer.echo(f"Manifest: {workspace.manifest_path}")
+
+
+@app.command()
+def draft(
+    data_folder: Path = typer.Argument(..., help="CSV data/out/results folder to draft."),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Create draft plot recipes, plot-ready CSVs, scripts, and cached previews."""
+    index = draft_csv_root(data_folder)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "mode": "csv-studio-draft",
+                    "csv_root": str(Path(data_folder).expanduser().resolve()),
+                    "datasets": len(index.datasets),
+                    "records": [
+                        {
+                            "plot_id": record.plot_id,
+                            "plot_path": record.image.relative_path.as_posix(),
+                            "csv_path": record.csv.relative_path.as_posix() if record.csv else None,
+                            "recipe_path": record.recipe_path.as_posix()
+                            if record.recipe_path
+                            else None,
+                        }
+                        for record in index.records
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return
+    typer.echo(f"Datasets: {len(index.datasets)}")
+    typer.echo(f"Draft plots: {len(index.records)}")
+
+
+@app.command("import-artifacts")
+def import_artifacts(
+    folder: Path = typer.Argument(..., help="Folder containing PNG/SVG references to import."),
+) -> None:
+    """Import nearby PNG/SVG files as reference-only artifacts."""
+    result = import_artifact_references(folder)
+    typer.echo(f"Imported artifacts: {result.imported_count}")
+    typer.echo(f"Manifest: {result.manifest_path}")
 
 
 @app.command("import-manifest")
@@ -125,8 +227,13 @@ def validate(project_root: Path = typer.Argument(Path("."), help="Project direct
 def serve(
     project_root: Path = typer.Argument(Path("."), help="Project directory to serve."),
     port: int | None = typer.Option(None, help="Streamlit server port."),
+    include_artifacts: bool = typer.Option(
+        False,
+        "--include-artifacts",
+        help="Also show explicitly imported/legacy PNG/SVG artifacts.",
+    ),
 ) -> None:
-    """Launch the local Streamlit artifact browser."""
+    """Launch the local Streamlit CSV plot studio."""
     resolved_root = project_root.expanduser().resolve()
     app_path = Path(__file__).parent / "ui" / "app.py"
     command = [
@@ -141,6 +248,8 @@ def serve(
     if port is not None:
         command.append(f"--server.port={port}")
     command.extend(["--", "--project-root", str(resolved_root)])
+    if include_artifacts:
+        command.append("--include-artifacts")
     raise typer.Exit(subprocess.run(command, check=False).returncode)
 
 

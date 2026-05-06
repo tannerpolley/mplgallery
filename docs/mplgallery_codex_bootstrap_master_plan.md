@@ -1,6 +1,16 @@
 # MPLGallery: Bootstrap + Master Plan + Codex Handoff
 
 **Document date:** 2026-05-04  
+**Active pivot note:** As of 2026-05-05, the active v1 direction is CSV Plot
+Studio first, not artifact browser first. The package should discover CSV
+tables in analysis output folders such as `data`, `out`, `outputs`, `result`,
+and `results`; create editable draft Matplotlib recipes, generated scripts,
+plot-ready CSVs, and cached previews under the CSV root's `.mplgallery/`
+folder; and treat existing PNG/SVG files as explicit reference imports only.
+The assumed personal project layout is `analysis_name/scripts`,
+`analysis_name/data/input`, `analysis_name/data/raw`,
+`analysis_name/data/processed`, `analysis_name/out/plots`,
+`analysis_name/out/reports`, and optional `analysis_name/config`.
 **Working GitHub repository name:** `mplgallery`  
 **Python distribution name:** `mplgallery`  
 **Python import name:** `mplgallery`  

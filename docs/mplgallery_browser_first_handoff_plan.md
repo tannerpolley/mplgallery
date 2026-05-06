@@ -3,6 +3,12 @@
 **Document date:** 2026-05-04  
 **Purpose:** handoff plan for revising the master plan and then implementing the first real build step after a Codex restart.
 
+> Status update, 2026-05-05: this browser-first plan is retained for history,
+> but the active product direction is now CSV-first. MPLGallery defaults to
+> discovering CSV roots such as `data/`, `out/`, and `results/`, drafting
+> Matplotlib recipes/previews under each root's `.mplgallery/` folder, and only
+> importing existing PNG/SVG files through explicit reference-artifact commands.
+
 ## Summary
 
 Revise `docs/mplgallery_codex_bootstrap_master_plan.md` so v1 is an artifact browser first, not an editing workbench first. The prior handoff in `plot_gallery_package_ui_handoff.md` should become product guidance: fast local file-browser feel, output-tree sidebar, compact image grid, cached redraws from CSV changes, and minimal visible metadata by default.
