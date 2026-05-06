@@ -7,6 +7,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from mplgallery.core.user_settings import load_user_settings, remember_recent_root, save_user_settings
 from mplgallery.core.models import CSVStudioIndex, CacheMetadata, PlotRecord
 from mplgallery.core.renderer import render_cached_plot
 from mplgallery.core.studio import build_csv_studio_index
@@ -17,11 +18,17 @@ from mplgallery.ui.component import (
     render_plot_browser,
     selected_plot_id_from_state_or_query,
 )
+from mplgallery.ui.root_state import resolve_initial_root
 
 
 def main() -> None:
     args = _parse_args()
-    project_root = args.project_root.expanduser().resolve()
+    launch_root = args.project_root.expanduser().resolve()
+    settings = load_user_settings()
+    project_root = _active_project_root(launch_root, choose_root=args.choose_root, settings=settings)
+    if project_root.is_dir():
+        settings = remember_recent_root(settings, project_root)
+        save_user_settings(settings)
     st.set_page_config(page_title="MPLGallery", layout="wide", initial_sidebar_state="collapsed")
     _render_host_chrome(project_root)
 
@@ -41,17 +48,30 @@ def main() -> None:
         datasets=index.datasets,
         selected_plot_id=selected_plot_id,
         errors=component_errors(),
+        launch_root=launch_root,
+        recent_roots=settings.recent_roots,
+        root_error=st.session_state.get("mplgallery_root_error"),
+        show_root_chooser=args.choose_root,
     )
     result = render_plot_browser(payload)
-    if process_component_event(event=result.event, project_root=project_root):
+    if process_component_event(event=result.event, project_root=project_root, launch_root=launch_root):
         st.rerun()
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", type=Path, default=Path("."))
+    parser.add_argument("--choose-root", action="store_true")
     parser.add_argument("--include-artifacts", action="store_true")
     return parser.parse_args()
+
+
+def _active_project_root(launch_root: Path, *, choose_root: bool, settings) -> Path:
+    if "mplgallery_active_project_root" not in st.session_state:
+        st.session_state["mplgallery_active_project_root"] = str(
+            resolve_initial_root(launch_root, settings, choose_root=choose_root)
+        )
+    return Path(st.session_state["mplgallery_active_project_root"]).expanduser().resolve()
 
 
 def _render_host_chrome(project_root: Path) -> None:

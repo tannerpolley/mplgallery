@@ -9,6 +9,8 @@ import {
   parseLimits,
   plotIdSet,
   reconcileCheckedPlotIds,
+  shortRootLabel,
+  visibleRecentRoots,
 } from "./utils";
 import type { PlotRecord } from "./types";
 
@@ -98,5 +100,16 @@ describe("component utilities", () => {
     expect(clampNumber(120, 180, 400)).toBe(180);
     expect(clampNumber(520, 180, 400)).toBe(400);
     expect(clampNumber(260, 180, 400)).toBe(260);
+  });
+
+  it("keeps root labels compact and recent roots deduplicated", () => {
+    expect(shortRootLabel("C:\\Users\\Tanner\\Documents\\git\\mplgallery")).toBe("…/git/mplgallery");
+    expect(shortRootLabel("examples")).toBe("examples");
+    expect(visibleRecentRoots("C:/work/current", [
+      "C:/work/current",
+      "C:/work/other",
+      "c:/work/other/",
+      "D:/analysis",
+    ])).toEqual(["C:/work/other", "D:/analysis"]);
   });
 });

@@ -3,6 +3,7 @@ import {
   useMemo,
   useState,
   type CSSProperties,
+  type FormEvent as ReactFormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -28,6 +29,8 @@ import {
   parseLimits,
   plotIdSet,
   reconcileCheckedPlotIds,
+  shortRootLabel,
+  visibleRecentRoots,
 } from "./utils";
 import "./App.css";
 
@@ -37,6 +40,13 @@ type StreamlitProps = {
 
 const emptyPayload: BrowserPayload = {
   projectRoot: "",
+  rootContext: {
+    activeRoot: "",
+    launchRoot: "",
+    recentRoots: [],
+    error: null,
+    showRootChooser: false,
+  },
   selectedPlotId: null,
   datasets: [],
   records: [],
@@ -65,6 +75,13 @@ const layoutBounds = {
 
 function App(props: StreamlitProps) {
   const payload = props.payload ?? emptyPayload;
+  const rootContext = payload.rootContext ?? {
+    activeRoot: payload.projectRoot,
+    launchRoot: payload.projectRoot,
+    recentRoots: [],
+    error: null,
+    showRootChooser: false,
+  };
   const [selectedPlotId, setSelectedPlotId] = useState<string | null>(payload.selectedPlotId ?? null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState(".");
@@ -77,10 +94,24 @@ function App(props: StreamlitProps) {
   const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useState(defaultLayout);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
+  const [rootDraft, setRootDraft] = useState(rootContext.activeRoot);
+  const [rootMenuOpen, setRootMenuOpen] = useState(Boolean(rootContext.showRootChooser));
 
   useEffect(() => {
     setSelectedPlotId(payload.selectedPlotId ?? null);
   }, [payload.selectedPlotId]);
+
+  useEffect(() => {
+    setRootDraft(rootContext.activeRoot);
+    setRootMenuOpen(Boolean(rootContext.showRootChooser));
+    setSelectedDatasetId(null);
+    setSelectedPlotId(payload.selectedPlotId ?? null);
+    setCheckedPlotIds(new Set());
+    setCheckedDatasetIds(new Set());
+    setHasUserFilter(false);
+    setExpandedCardIds(new Set());
+    setMaximizedPlotId(null);
+  }, [rootContext.activeRoot, payload.selectedPlotId]);
 
   useEffect(() => {
     setCheckedPlotIds((current) => reconcileCheckedPlotIds(payload.records, current, hasUserFilter));
@@ -142,6 +173,35 @@ function App(props: StreamlitProps) {
         id: eventId("draft_checked_datasets"),
         type: "draft_checked_datasets",
         dataset_ids: [...checkedDatasetIds],
+      },
+    });
+  }
+
+  function changeProjectRoot(rootPath: string) {
+    Streamlit.setComponentValue({
+      event: {
+        id: eventId("change_project_root"),
+        type: "change_project_root",
+        root_path: rootPath,
+      },
+    });
+  }
+
+  function resetProjectRoot() {
+    Streamlit.setComponentValue({
+      event: {
+        id: eventId("reset_project_root"),
+        type: "reset_project_root",
+      },
+    });
+  }
+
+  function forgetRecentRoot(rootPath: string) {
+    Streamlit.setComponentValue({
+      event: {
+        id: eventId("forget_recent_root"),
+        type: "forget_recent_root",
+        root_path: rootPath,
       },
     });
   }
@@ -292,6 +352,16 @@ function App(props: StreamlitProps) {
             <div className="mg-workspace-title">CSV plot studio</div>
           </div>
           <div className="mg-header-actions">
+            <RootChooser
+              rootContext={rootContext}
+              rootDraft={rootDraft}
+              open={rootMenuOpen}
+              onOpenChange={setRootMenuOpen}
+              onRootDraftChange={setRootDraft}
+              onChangeRoot={changeProjectRoot}
+              onResetRoot={resetProjectRoot}
+              onForgetRoot={forgetRecentRoot}
+            />
             {selectedDataset ? (
               <button className="mg-primary" type="button" onClick={() => draftDataset(selectedDataset.id)}>
                 Generate draft
@@ -380,6 +450,75 @@ function App(props: StreamlitProps) {
         />
       ) : null}
     </div>
+  );
+}
+
+function RootChooser({
+  rootContext,
+  rootDraft,
+  open,
+  onOpenChange,
+  onRootDraftChange,
+  onChangeRoot,
+  onResetRoot,
+  onForgetRoot,
+}: {
+  rootContext: NonNullable<BrowserPayload["rootContext"]>;
+  rootDraft: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRootDraftChange: (value: string) => void;
+  onChangeRoot: (rootPath: string) => void;
+  onResetRoot: () => void;
+  onForgetRoot: (rootPath: string) => void;
+}) {
+  const recentRoots = visibleRecentRoots(rootContext.activeRoot, rootContext.recentRoots);
+
+  function submitRoot(event: ReactFormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onChangeRoot(rootDraft);
+  }
+
+  return (
+    <details className="mg-root-menu" open={open} onToggle={(event) => onOpenChange(event.currentTarget.open)}>
+      <summary aria-label={`Active root ${rootContext.activeRoot}`}>
+        <span className="mg-root-kicker">Root</span>
+        <span>{shortRootLabel(rootContext.activeRoot)}</span>
+      </summary>
+      <div className="mg-root-popover" aria-label="Project root chooser">
+        <form onSubmit={submitRoot} className="mg-root-form">
+          <label htmlFor="project-root-input">Project root</label>
+          <input
+            id="project-root-input"
+            value={rootDraft}
+            onChange={(event) => onRootDraftChange(event.target.value)}
+            placeholder="Paste a project folder path"
+          />
+          {rootContext.error ? <div className="mg-root-error" role="alert">{rootContext.error}</div> : null}
+          <div className="mg-root-actions">
+            <button type="submit" className="mg-primary">Open root</button>
+            <button type="button" className="mg-inspector-toggle" onClick={onResetRoot}>
+              Use launch root
+            </button>
+          </div>
+        </form>
+        {recentRoots.length ? (
+          <div className="mg-root-recents">
+            <div className="mg-root-recents-title">Recent roots</div>
+            {recentRoots.map((root) => (
+              <div className="mg-root-recent" key={root}>
+                <button type="button" onClick={() => onChangeRoot(root)} title={root}>
+                  {shortRootLabel(root)}
+                </button>
+                <button type="button" aria-label={`Forget ${root}`} onClick={() => onForgetRoot(root)}>
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </details>
   );
 }
 

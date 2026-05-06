@@ -44,7 +44,8 @@ jobs:
           4,0.61,0.58
           CSV
           cd "$RUNNER_TEMP/external-analysis"
-          "$GITHUB_WORKSPACE/.wheel-smoke-venv/bin/mplgallery" run --help
+          "$GITHUB_WORKSPACE/.wheel-smoke-venv/bin/mplgallery" run --help | tee "$RUNNER_TEMP/mplgallery-run-help.txt"
+          grep -- --choose-root "$RUNNER_TEMP/mplgallery-run-help.txt"
           "$GITHUB_WORKSPACE/.wheel-smoke-venv/bin/mplgallery" draft data --json > draft.json
           "$GITHUB_WORKSPACE/.wheel-smoke-venv/bin/mplgallery" scan . --json > scan.json
           "$GITHUB_WORKSPACE/.wheel-smoke-venv/bin/python" - <<'PY'
@@ -58,7 +59,7 @@ jobs:
           assert any("model_results.csv" in dataset["relative_path"] for dataset in scan["datasets"])
           assert scan["plots_discovered"] >= 1
           PY
-          "$GITHUB_WORKSPACE/.wheel-smoke-venv/bin/mplgallery" run --port 8765 > "$RUNNER_TEMP/mplgallery-run.log" 2>&1 &
+          MPLGALLERY_CONFIG_HOME="$RUNNER_TEMP/mplgallery-config" "$GITHUB_WORKSPACE/.wheel-smoke-venv/bin/mplgallery" run --port 8765 > "$RUNNER_TEMP/mplgallery-run.log" 2>&1 &
           server_pid=$!
           for _ in $(seq 1 30); do
             if curl --fail --silent --show-error http://127.0.0.1:8765/ > "$RUNNER_TEMP/mplgallery-home.html"; then

@@ -50,6 +50,18 @@ entrypoint: run it from the analysis/project root and MPLGallery starts the
 local Streamlit CSV Plot Studio. Existing PNG/SVG files are not scanned into the
 main gallery unless you explicitly opt into artifact/reference mode.
 
+You can also start from any folder and switch roots inside the app:
+
+```bash
+mplgallery run --choose-root
+mplgallery run C:\path\to\starting\project --choose-root
+```
+
+The root chooser stores only convenience settings, such as recent project
+folders, under the user config directory. Plot recipes, generated scripts,
+plot-ready CSVs, cached previews, and generated figures stay inside the
+selected project or analysis folder.
+
 ## Scan a project
 
 ```bash

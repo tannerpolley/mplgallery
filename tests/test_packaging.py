@@ -101,6 +101,7 @@ def test_fresh_wheel_install_exposes_project_root_run_command(tmp_path: Path) ->
     )
     assert help_result.returncode == 0, help_result.stdout + help_result.stderr
     assert "Launch the local Streamlit CSV plot studio" in help_result.stdout
+    assert "--choose-root" in help_result.stdout
 
     draft_result = subprocess.run(
         [str(mplgallery), "draft", "data", "--json"],

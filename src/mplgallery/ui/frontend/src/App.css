@@ -373,6 +373,137 @@ summary:focus-visible {
   color: #8a5a11;
 }
 
+.mg-root-menu {
+  position: relative;
+}
+
+.mg-root-menu summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  border: 1px solid var(--mg-line-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--mg-ink);
+  cursor: pointer;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mg-root-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.mg-root-menu[open] summary,
+.mg-root-menu summary:hover {
+  border-color: var(--mg-accent);
+  color: var(--mg-accent);
+}
+
+.mg-root-kicker {
+  color: var(--mg-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.mg-root-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(460px, calc(100vw - 42px));
+  border: 1px solid var(--mg-line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 18px 46px rgba(23, 32, 47, 0.16);
+  padding: 11px;
+}
+
+.mg-root-form label,
+.mg-root-recents-title {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--mg-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.mg-root-form input {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--mg-line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--mg-ink);
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.mg-root-error {
+  margin-top: 7px;
+  border: 1px solid #edc3c3;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: var(--mg-bad);
+  padding: 7px 8px;
+  font-size: 12px;
+}
+
+.mg-root-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.mg-root-recents {
+  margin-top: 12px;
+  border-top: 1px solid var(--mg-line);
+  padding-top: 10px;
+}
+
+.mg-root-recent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 6px;
+  align-items: center;
+}
+
+.mg-root-recent + .mg-root-recent {
+  margin-top: 5px;
+}
+
+.mg-root-recent button {
+  min-height: 28px;
+  border: 1px solid var(--mg-line);
+  border-radius: 8px;
+  background: var(--mg-panel-soft);
+  color: var(--mg-ink);
+  padding: 0 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.mg-root-recent button:last-child {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  text-align: center;
+  color: var(--mg-muted);
+}
+
+.mg-root-recent button:hover {
+  border-color: var(--mg-accent);
+  color: var(--mg-accent);
+}
+
 .mg-header-actions {
   display: flex;
   flex: 0 0 auto;
