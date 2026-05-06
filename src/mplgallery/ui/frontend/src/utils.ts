@@ -17,7 +17,7 @@ export function reconcileCheckedPlotIds(
   hasUserFilter: boolean,
 ): Set<string> {
   const validIds = plotIdSet(records);
-  if (!hasUserFilter) return validIds;
+  if (!hasUserFilter) return new Set();
   return new Set([...current].filter((plotId) => validIds.has(plotId)));
 }
 
@@ -41,8 +41,8 @@ export function emptyGalleryMessage(
     return "No plot image files were found. If a manifest exists, the generated artifacts may still need to be built.";
   }
   if (query.trim()) return "No plots match this search.";
-  if (hasUserFilter && checkedPlotIds.size === 0) {
-    return "No plots selected. Check a folder or plot in the output tree.";
+  if (checkedPlotIds.size === 0) {
+    return "Select a CSV or check plots to build a gallery.";
   }
   return "No visible plots for the current filters.";
 }

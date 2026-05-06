@@ -1,16 +1,21 @@
 # MPLGallery: Bootstrap + Master Plan + Codex Handoff
 
 **Document date:** 2026-05-04  
-**Active pivot note:** As of 2026-05-05, the active v1 direction is CSV Plot
-Studio first, not artifact browser first. The package should discover CSV
-tables in analysis output folders such as `data`, `out`, `outputs`, `result`,
-and `results`; create editable draft Matplotlib recipes, generated scripts,
-plot-ready CSVs, and cached previews under the CSV root's `.mplgallery/`
-folder; and treat existing PNG/SVG files as explicit reference imports only.
-The assumed personal project layout is `analysis_name/scripts`,
-`analysis_name/data/input`, `analysis_name/data/raw`,
-`analysis_name/data/processed`, `analysis_name/out/plots`,
-`analysis_name/out/reports`, and optional `analysis_name/config`.
+**Active pivot note:** As of 2026-05-06, the active v1 direction is CSV Plot
+Studio first, aligned with `C:\Users\Tanner\.codex\PROJECT_ARCHITECTURE.md`.
+The package should discover CSV tables from `data/` roots and curated result
+tables under `results/final/tables/`; create editable draft Matplotlib recipes,
+generated scripts, plot-ready CSVs, and cached previews under the CSV root's
+`.mplgallery/` folder; and show existing PNG/SVG files only when they live in
+curated `results/final/figures/` folders or are explicitly imported.
+Disposable `results/runs/` content and arbitrary docs/build/test images should
+stay out of default discovery. The assumed durable analysis layout is
+`analyses/<short_id>/scripts`, `analyses/<short_id>/data/input`,
+`analyses/<short_id>/data/raw`, `analyses/<short_id>/data/processed`,
+`analyses/<short_id>/results/final/figures`,
+`analyses/<short_id>/results/final/tables`,
+`analyses/<short_id>/results/final/reports`, optional
+`analyses/<short_id>/config`, and optional root `data/reference`.
 **Working GitHub repository name:** `mplgallery`  
 **Python distribution name:** `mplgallery`  
 **Python import name:** `mplgallery`  
@@ -1291,12 +1296,23 @@ Allow editing project-level `.mplgallery/config.yaml` fields:
 
 Use pandas for:
 
-- `read_csv` previews;
+- `read_csv` previews and sampled plot-ready CSV copies;
 - column detection;
 - numeric/non-numeric classification;
+- automatic draft plot inference from CSV shape;
+- generated render scripts based on `DataFrame.plot(...)`;
 - basic summary statistics;
 - missing-value counts;
 - detecting possible x/y columns for generic recipes.
+
+Pandas is a convenience layer for CSV-first drafting, not the final editing
+contract. The editable contract remains Matplotlib metadata in YAML:
+
+- pandas drafts should record `draft_engine: pandas`;
+- generated scripts should start from pandas plot idioms where possible;
+- live UI edits should persist Matplotlib redraw metadata and rerender cached
+  previews from `.mplgallery/plot_ready/`;
+- source CSVs must remain immutable.
 
 Avoid loading extremely large CSVs fully in the UI by default. Use:
 

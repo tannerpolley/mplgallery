@@ -130,7 +130,10 @@ def scan(
 
 @app.command()
 def init(
-    data_folder: Path = typer.Argument(..., help="CSV data/out/results folder to initialize."),
+    data_folder: Path = typer.Argument(
+        ...,
+        help="CSV root to initialize, usually analyses/<id>/data or analyses/<id>/results/final/tables.",
+    ),
 ) -> None:
     """Create the `.mplgallery` workspace beside a CSV folder without rendering."""
     workspace = init_csv_root(data_folder)
@@ -140,11 +143,15 @@ def init(
 
 @app.command()
 def draft(
-    data_folder: Path = typer.Argument(..., help="CSV data/out/results folder to draft."),
+    data_folder: Path = typer.Argument(
+        ...,
+        help="CSV root to draft, usually analyses/<id>/data or analyses/<id>/results/final/tables.",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
 ) -> None:
     """Create draft plot recipes, plot-ready CSVs, scripts, and cached previews."""
-    index = draft_csv_root(data_folder)
+    root = Path(data_folder).expanduser().resolve()
+    index = draft_csv_root(root, project_root=_project_root_for_csv_root(root))
     if json_output:
         typer.echo(
             json.dumps(
@@ -170,6 +177,15 @@ def draft(
         return
     typer.echo(f"Datasets: {len(index.datasets)}")
     typer.echo(f"Draft plots: {len(index.records)}")
+
+
+def _project_root_for_csv_root(csv_root: Path) -> Path:
+    parts = tuple(part.lower() for part in csv_root.parts)
+    if len(parts) >= 3 and parts[-3:] == ("results", "final", "tables"):
+        return csv_root.parents[2]
+    if csv_root.name.lower() == "data":
+        return csv_root.parent
+    return csv_root.parent
 
 
 @app.command("import-artifacts")
