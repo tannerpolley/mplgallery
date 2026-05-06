@@ -20,10 +20,15 @@ DEFAULT_IGNORE_DIRS = {
     "__pycache__",
     ".ipynb_checkpoints",
     "build",
+    "coverage",
     "dist",
     "env",
     "mlruns",
     "node_modules",
+    "output",
+    "outputs",
+    "playwright-report",
+    "test-results",
     "venv",
 }
 

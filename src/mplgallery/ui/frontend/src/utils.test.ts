@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { buildTree, clampNumber, filterRecords, normalizeRedraw, parseLimits } from "./utils";
+import {
+  buildTree,
+  clampNumber,
+  emptyGalleryMessage,
+  filterRecords,
+  galleryStatus,
+  normalizeRedraw,
+  parseLimits,
+  plotIdSet,
+  reconcileCheckedPlotIds,
+} from "./utils";
 import type { PlotRecord } from "./types";
 
 const records: PlotRecord[] = [
@@ -46,6 +56,31 @@ describe("component utilities", () => {
       "nested__beta",
     ]);
     expect(filterRecords(records, "", new Set()).map((record) => record.id)).toEqual([]);
+  });
+
+  it("defaults checkbox state to all plots before the user filters", () => {
+    expect([...plotIdSet(records)].sort()).toEqual(["nested__beta", "plots__alpha"]);
+    expect([...reconcileCheckedPlotIds(records, new Set(), false)].sort()).toEqual([
+      "nested__beta",
+      "plots__alpha",
+    ]);
+    expect([...reconcileCheckedPlotIds(records, new Set(), true)]).toEqual([]);
+  });
+
+  it("summarizes gallery status and empty state causes", () => {
+    expect(galleryStatus(records)).toEqual({
+      totalPlots: 2,
+      matchedCsvs: 2,
+      missingCsvs: 0,
+      renderErrors: 0,
+    });
+    expect(emptyGalleryMessage([], "", new Set(), false)).toMatch(/No plot image files/);
+    expect(emptyGalleryMessage(records, "missing", plotIdSet(records), false)).toBe(
+      "No plots match this search.",
+    );
+    expect(emptyGalleryMessage(records, "", new Set(), true)).toBe(
+      "No plots selected. Check a folder or plot in the output tree.",
+    );
   });
 
   it("normalizes metadata while preserving style choices", () => {

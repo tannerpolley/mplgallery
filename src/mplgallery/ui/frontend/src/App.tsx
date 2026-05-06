@@ -8,7 +8,19 @@ import {
 } from "react";
 import { Streamlit } from "streamlit-component-lib";
 import type { BrowserPayload, PlotRecord, RedrawMetadata, SeriesStyle, SubplotMetadata, TreeNode } from "./types";
-import { buildTree, clampNumber, eventId, filterRecords, foldersFor, normalizeRedraw, parseLimits } from "./utils";
+import {
+  buildTree,
+  clampNumber,
+  emptyGalleryMessage,
+  eventId,
+  filterRecords,
+  foldersFor,
+  galleryStatus,
+  normalizeRedraw,
+  parseLimits,
+  plotIdSet,
+  reconcileCheckedPlotIds,
+} from "./utils";
 import "./App.css";
 
 type StreamlitProps = {
@@ -48,7 +60,8 @@ function App(props: StreamlitProps) {
     payload.selectedPlotId ?? payload.records[0]?.id ?? null,
   );
   const [selectedFolder, setSelectedFolder] = useState(".");
-  const [checkedPlotIds, setCheckedPlotIds] = useState<Set<string>>(new Set());
+  const [checkedPlotIds, setCheckedPlotIds] = useState<Set<string>>(() => plotIdSet(payload.records));
+  const [hasUserFilter, setHasUserFilter] = useState(false);
   const [query, setQuery] = useState("");
   const [tileSize, setTileSize] = useState(230);
   const [maximizedPlotId, setMaximizedPlotId] = useState<string | null>(null);
@@ -60,14 +73,24 @@ function App(props: StreamlitProps) {
   }, [payload.selectedPlotId, payload.records]);
 
   useEffect(() => {
-    const validIds = new Set(payload.records.map((record) => record.id));
-    setCheckedPlotIds((current) => new Set([...current].filter((plotId) => validIds.has(plotId))));
-  }, [payload.records]);
+    setCheckedPlotIds((current) => reconcileCheckedPlotIds(payload.records, current, hasUserFilter));
+  }, [payload.records, hasUserFilter]);
 
   const tree = useMemo(() => buildTree(payload.records), [payload.records]);
+  const effectiveCheckedPlotIds = useMemo(
+    () => (hasUserFilter ? checkedPlotIds : plotIdSet(payload.records)),
+    [checkedPlotIds, hasUserFilter, payload.records],
+  );
   const visibleRecords = useMemo(
-    () => filterRecords(payload.records, query, checkedPlotIds),
-    [payload.records, query, checkedPlotIds],
+    () => filterRecords(payload.records, query, effectiveCheckedPlotIds),
+    [payload.records, query, effectiveCheckedPlotIds],
+  );
+  const status = useMemo(() => galleryStatus(payload.records), [payload.records]);
+  const noVisiblePlotsMessage = emptyGalleryMessage(
+    payload.records,
+    query,
+    effectiveCheckedPlotIds,
+    hasUserFilter,
   );
   const selectedRecord =
     payload.records.find((record) => record.id === selectedPlotId) ?? payload.records[0] ?? null;
@@ -146,12 +169,13 @@ function App(props: StreamlitProps) {
           records={payload.records}
           selectedFolder={selectedFolder}
           selectedPlotId={selectedPlotId}
-          checkedPlotIds={checkedPlotIds}
+          checkedPlotIds={effectiveCheckedPlotIds}
           onSelectFolder={setSelectedFolder}
           onSelectPlot={selectPlot}
           onToggleFolder={(path, checked) => {
+            setHasUserFilter(true);
             setCheckedPlotIds((current) => {
-              const next = new Set(current);
+              const next = new Set(hasUserFilter ? current : plotIdSet(payload.records));
               const folderPlotIds = payload.records
                 .filter((record) => foldersFor(record).includes(path))
                 .map((record) => record.id);
@@ -163,8 +187,9 @@ function App(props: StreamlitProps) {
             });
           }}
           onTogglePlot={(plotId, checked) => {
+            setHasUserFilter(true);
             setCheckedPlotIds((current) => {
-              const next = new Set(current);
+              const next = new Set(hasUserFilter ? current : plotIdSet(payload.records));
               if (checked) next.add(plotId);
               else next.delete(plotId);
               return next;
@@ -197,6 +222,12 @@ function App(props: StreamlitProps) {
               Reset layout
             </button>
           </div>
+        </div>
+        <div className="mg-status-strip" aria-label="Project status">
+          <span>{status.totalPlots} plots</span>
+          <span>{status.matchedCsvs} CSV matched</span>
+          <span className={status.missingCsvs ? "is-warning" : ""}>{status.missingCsvs} missing CSV</span>
+          <span className={status.renderErrors ? "is-warning" : ""}>{status.renderErrors} render errors</span>
         </div>
         <section className="mg-gallery" aria-label="Plot gallery">
           <div className="mg-gallery-toolbar">
@@ -232,7 +263,7 @@ function App(props: StreamlitProps) {
                   });
                 }}
               />
-            )) : <div className="mg-empty">Check a folder or plot to show it here.</div>}
+            )) : <div className="mg-empty">{noVisiblePlotsMessage}</div>}
           </div>
         </section>
       </main>

@@ -28,6 +28,12 @@ uv sync --dev
 uv run mplgallery serve examples/sample_project
 ```
 
+Optional DVC and MLflow integrations are not installed by default:
+
+```bash
+pip install "mplgallery[dvc,mlflow]"
+```
+
 ## Run against a project
 
 ```bash
@@ -38,7 +44,27 @@ mplgallery serve /path/to/project
 
 ```bash
 mplgallery scan /path/to/project
+mplgallery scan /path/to/project --json
+mplgallery validate /path/to/project
 ```
+
+`validate` reports manifest references to missing generated plot images or CSV
+files so ignored/generated artifact workflows fail with a clear diagnostic
+instead of an empty gallery.
+
+## Import Existing Plot Manifests
+
+Projects with an existing ePC-SAFT-style `docs/plots/manifest.json` can seed an
+MPLGallery manifest directly:
+
+```bash
+mplgallery import-manifest docs/plots/manifest.json --format epcsaft --project-root .
+mplgallery import-manifest docs/plots/manifest.json --format epcsaft --project-root . --dry-run
+```
+
+The importer reads `output_path`, `svg_path`, `data_path`, `source_path`, and
+`title`, writes `.mplgallery/manifest.yaml`, and reports missing plot/CSV
+references separately.
 
 ## Modes
 
@@ -112,8 +138,11 @@ To verify the package works in a separate environment:
 uv run --no-sync python -m build
 python -m venv .wheel-smoke-venv
 .wheel-smoke-venv\Scripts\pip install dist\*.whl
-.wheel-smoke-venv\Scripts\python -m mplgallery scan examples/install_smoke_project
+.wheel-smoke-venv\Scripts\mplgallery.exe scan examples/install_smoke_project
 ```
+
+The wheel must include `mplgallery/ui/frontend/dist/index.html`; source
+`node_modules` are intentionally not packaged.
 
 ## Development
 

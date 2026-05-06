@@ -35,6 +35,16 @@ class ProjectManifest(BaseModel):
         self.records.append(updated_record)
 
 
+class ManifestDiagnostics(BaseModel):
+    manifest_record_count: int
+    missing_plot_paths: list[Path] = Field(default_factory=list)
+    missing_csv_paths: list[Path] = Field(default_factory=list)
+
+    @property
+    def has_errors(self) -> bool:
+        return bool(self.missing_plot_paths or self.missing_csv_paths)
+
+
 def load_manifest(project_root: Path | str) -> ProjectManifest:
     root = Path(project_root)
     manifest_path = root / ".mplgallery" / "manifest.yaml"
@@ -69,6 +79,29 @@ def save_manifest(project_root: Path | str, manifest: ProjectManifest) -> Path:
     data = _manifest_to_yaml_data(manifest)
     manifest_path.write_text(yaml.safe_dump(data, sort_keys=False))
     return manifest_path
+
+
+def diagnose_manifest_references(
+    project_root: Path | str,
+    manifest: ProjectManifest | None = None,
+) -> ManifestDiagnostics:
+    root = Path(project_root).expanduser().resolve()
+    loaded_manifest = manifest or load_manifests(root)
+    missing_plot_paths: list[Path] = []
+    missing_csv_paths: list[Path] = []
+
+    for record in loaded_manifest.records:
+        if not (root / record.plot_path).exists():
+            missing_plot_paths.append(record.plot_path)
+        for csv_path in (record.plot_csv_path, record.csv_path, record.raw_csv_path):
+            if csv_path is not None and not (root / csv_path).exists():
+                missing_csv_paths.append(csv_path)
+
+    return ManifestDiagnostics(
+        manifest_record_count=len(loaded_manifest.records),
+        missing_plot_paths=sorted(set(missing_plot_paths), key=lambda path: path.as_posix()),
+        missing_csv_paths=sorted(set(missing_csv_paths), key=lambda path: path.as_posix()),
+    )
 
 
 def update_manifest_redraw(

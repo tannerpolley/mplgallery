@@ -1,5 +1,52 @@
 import type { PlotRecord, RedrawMetadata, SeriesStyle, SubplotMetadata, TreeNode } from "./types";
 
+export type GalleryStatus = {
+  totalPlots: number;
+  matchedCsvs: number;
+  missingCsvs: number;
+  renderErrors: number;
+};
+
+export function plotIdSet(records: PlotRecord[]): Set<string> {
+  return new Set(records.map((record) => record.id));
+}
+
+export function reconcileCheckedPlotIds(
+  records: PlotRecord[],
+  current: Set<string>,
+  hasUserFilter: boolean,
+): Set<string> {
+  const validIds = plotIdSet(records);
+  if (!hasUserFilter) return validIds;
+  return new Set([...current].filter((plotId) => validIds.has(plotId)));
+}
+
+export function galleryStatus(records: PlotRecord[]): GalleryStatus {
+  const matchedCsvs = records.filter((record) => Boolean(record.csvPath)).length;
+  return {
+    totalPlots: records.length,
+    matchedCsvs,
+    missingCsvs: records.length - matchedCsvs,
+    renderErrors: records.filter((record) => Boolean(record.renderError)).length,
+  };
+}
+
+export function emptyGalleryMessage(
+  records: PlotRecord[],
+  query: string,
+  checkedPlotIds: Set<string>,
+  hasUserFilter: boolean,
+): string {
+  if (records.length === 0) {
+    return "No plot image files were found. If a manifest exists, the generated artifacts may still need to be built.";
+  }
+  if (query.trim()) return "No plots match this search.";
+  if (hasUserFilter && checkedPlotIds.size === 0) {
+    return "No plots selected. Check a folder or plot in the output tree.";
+  }
+  return "No visible plots for the current filters.";
+}
+
 export function foldersFor(record: PlotRecord): string[] {
   const parts = record.imagePath.split("/");
   const folders = ["."];

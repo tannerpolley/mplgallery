@@ -21,17 +21,21 @@ dependencies = [
   "pyyaml>=6.0",
   "typer>=0.12",
   "rich>=13.0",
-  "pillow>=10.0",
-  "mlflow>=2.0",
-  "dvc>=3.0"
+  "pillow>=10.0"
 ]
+
+[project.optional-dependencies]
+dvc = ["dvc>=3.0"]
+mlflow = ["mlflow>=2.0"]
+integrations = ["dvc>=3.0", "mlflow>=2.0"]
 
 [dependency-groups]
 dev = [
   "pytest>=8.0",
   "ruff>=0.5",
   "mypy>=1.8",
-  "build>=1.2"
+  "build>=1.2",
+  "hatchling>=1.25"
 ]
 
 [project.scripts]
@@ -39,9 +43,23 @@ mplgallery = "mplgallery.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mplgallery"]
-artifacts = [
-  "src/mplgallery/ui/frontend/dist/**",
+exclude = [
+  "src/mplgallery/ui/frontend/node_modules/**",
 ]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/mplgallery",
+  "hatch_build.py",
+  "README.md",
+  "pyproject.toml",
+]
+exclude = [
+  "src/mplgallery/ui/frontend/node_modules/**",
+]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
 
 [tool.ruff]
 line-length = 100

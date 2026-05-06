@@ -37,13 +37,18 @@ def test_scan_project_ignores_default_runtime_directories(tmp_path: Path) -> Non
     touch(tmp_path / ".git" / "hidden.png")
     touch(tmp_path / ".dvc" / "hidden.csv")
     touch(tmp_path / "node_modules" / "hidden.svg")
+    touch(tmp_path / "output" / "playwright" / "hidden.png")
+    touch(tmp_path / "outputs" / "hidden.svg")
+    touch(tmp_path / "playwright-report" / "hidden.png")
+    touch(tmp_path / "test-results" / "hidden.png")
+    touch(tmp_path / "coverage" / "hidden.csv")
     touch(tmp_path / ".mplgallery" / "cache" / "cached.png")
     touch(tmp_path / "nested" / ".mplgallery" / "cache" / "cached.png")
 
     result = scan_project(tmp_path)
 
     assert [file.relative_path.as_posix() for file in result.files] == ["plots/kept.png"]
-    assert result.ignored_dir_count >= 5
+    assert result.ignored_dir_count >= 10
 
 
 def test_scan_project_rejects_missing_project_root(tmp_path: Path) -> None:

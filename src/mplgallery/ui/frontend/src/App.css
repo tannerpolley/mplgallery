@@ -209,7 +209,7 @@ summary:focus-visible {
 
 .mg-workspace {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -232,6 +232,31 @@ summary:focus-visible {
   overflow-wrap: anywhere;
   margin: 2px 0 0;
   font-size: 18px;
+}
+
+.mg-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--mg-line);
+  background: #fff;
+}
+
+.mg-status-strip span {
+  border: 1px solid var(--mg-line);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: var(--mg-muted);
+  padding: 2px 7px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.mg-status-strip .is-warning {
+  border-color: #e4b56a;
+  background: #fff7e8;
+  color: #8a5a11;
 }
 
 .mg-header-actions {

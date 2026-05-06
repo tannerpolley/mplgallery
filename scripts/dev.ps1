@@ -138,6 +138,10 @@ switch ($Action) {
             throw "No wheel found in dist after build."
         }
         Invoke-Repo @((Join-Path $SmokeVenv "Scripts\python.exe"), "-m", "pip", "install", "--force-reinstall", $Wheel.FullName)
-        Invoke-Repo @((Join-Path $SmokeVenv "Scripts\python.exe"), "-m", "mplgallery", "scan", "examples\install_smoke_project")
+        $InstalledDist = & (Join-Path $SmokeVenv "Scripts\python.exe") -c "from pathlib import Path; import mplgallery.ui.component as c; print(c._FRONTEND_BUILD_DIR / 'index.html')"
+        if (!(Test-Path -LiteralPath $InstalledDist)) {
+            throw "Installed wheel is missing frontend dist/index.html: $InstalledDist"
+        }
+        Invoke-Repo @((Join-Path $SmokeVenv "Scripts\mplgallery.exe"), "scan", "examples\install_smoke_project")
     }
 }
