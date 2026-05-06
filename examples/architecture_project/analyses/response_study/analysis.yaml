@@ -1,0 +1,11 @@
+id: response_study
+title: Response Study
+status: active
+summary: Small MPLGallery fixture for architecture-standard analysis discovery.
+outputs:
+  - path: results/final/figures/response_curve.svg
+    kind: figure
+  - path: results/final/tables/response_summary.csv
+    kind: table
+runtime:
+  quick_seconds: 1

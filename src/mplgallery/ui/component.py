@@ -4,21 +4,23 @@ from __future__ import annotations
 
 import base64
 import html
+import os
 from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
-from mplgallery.core.models import PlotRecord, RedrawMetadata, SeriesStyle
+from mplgallery.core.models import DatasetRecord, PlotRecord, RedrawMetadata, SeriesStyle
 from mplgallery.core.renderer import (
     DEFAULT_COLOR_CYCLE,
     LATEX_UNIT_SUGGESTIONS,
     LEGEND_LOCATION_CHOICES,
     PLOT_KIND_CHOICES,
 )
+from mplgallery.core.studio import draft_csv_dataset
 
 
 LINESTYLE_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -66,8 +68,13 @@ class ComponentEvent(BaseModel):
     type: Literal[
         "save_redraw_metadata",
         "request_rerender",
+        "select_dataset",
+        "draft_dataset",
+        "draft_checked_datasets",
     ]
     plot_id: str | None = None
+    dataset_id: str | None = None
+    dataset_ids: list[str] = Field(default_factory=list)
     redraw: RedrawMetadata | None = None
 
 
@@ -94,12 +101,13 @@ def build_component_payload(
     project_root: Path,
     records: list[PlotRecord],
     selected_plot_id: str | None,
+    datasets: list[DatasetRecord] | None = None,
     errors: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    selected = selected_plot_id or _first_plot_id(records)
     return {
         "projectRoot": str(project_root),
-        "selectedPlotId": selected,
+        "selectedPlotId": selected_plot_id,
+        "datasets": [_dataset_payload(dataset) for dataset in datasets or []],
         "records": [_record_payload(record) for record in records],
         "options": {
             "plotKinds": list(PLOT_KIND_CHOICES),
@@ -134,7 +142,12 @@ def process_component_event(
             record = _record_by_plot_id(st.session_state["mplgallery_records"], event.plot_id)
             from mplgallery.core.manifest import update_manifest_redraw
 
-            update_manifest_redraw(project_root, record.image.relative_path, event.redraw)
+            manifest_root = _manifest_root_for_record(project_root, record)
+            update_manifest_redraw(
+                manifest_root,
+                Path(os.path.relpath(record.image.path, manifest_root)),
+                event.redraw,
+            )
             _remove_cached_preview(project_root, record)
         except Exception as exc:
             _set_plot_error(event.plot_id, str(exc))
@@ -145,6 +158,14 @@ def process_component_event(
 
     if event.type == "request_rerender" and event.plot_id:
         _clear_plot_error(event.plot_id)
+        return True
+
+    if event.type == "draft_dataset" and event.dataset_id:
+        _draft_datasets_by_id(project_root, [event.dataset_id])
+        return True
+
+    if event.type == "draft_checked_datasets" and event.dataset_ids:
+        _draft_datasets_by_id(project_root, event.dataset_ids)
         return True
 
     return False
@@ -161,7 +182,7 @@ def selected_plot_id_from_state_or_query(records: list[PlotRecord]) -> str | Non
     valid_ids = {record.plot_id for record in records}
     if candidate in valid_ids:
         return str(candidate)
-    return _first_plot_id(records)
+    return None
 
 
 def component_errors() -> dict[str, str]:
@@ -177,6 +198,9 @@ def _record_payload(record: PlotRecord) -> dict[str, Any]:
         "name": record.image.relative_path.name,
         "kind": record.image.suffix.removeprefix(".").upper(),
         "imagePath": record.image.relative_path.as_posix(),
+        "sourceDatasetId": record.source_dataset_id,
+        "ownedByMplgallery": record.owned_by_mplgallery,
+        "visibilityRole": record.visibility_role,
         "csvPath": source_csv.relative_path.as_posix() if source_csv else None,
         "rawCsvPath": record.raw_csv.relative_path.as_posix() if record.raw_csv else None,
         "confidence": record.association_confidence.value,
@@ -195,6 +219,22 @@ def _record_payload(record: PlotRecord) -> dict[str, Any]:
         "redraw": redraw.model_dump(mode="json", exclude_none=True),
         "series": [style.model_dump(mode="json", exclude_none=True) for style in _series_for_editor(record)],
         "plotKind": redraw.kind,
+    }
+
+
+def _dataset_payload(dataset: DatasetRecord) -> dict[str, Any]:
+    return {
+        "id": dataset.dataset_id,
+        "displayName": dataset.display_name,
+        "path": dataset.relative_path.as_posix(),
+        "csvRootId": dataset.csv_root_relative_path.as_posix(),
+        "csvRootPath": dataset.csv_root_relative_path.as_posix(),
+        "draftStatus": dataset.draft_status,
+        "associatedPlotId": dataset.associated_plot_id,
+        "rowCountSampled": dataset.row_count_sampled,
+        "columns": dataset.columns,
+        "numericColumns": dataset.numeric_columns,
+        "categoricalColumns": dataset.categorical_columns,
     }
 
 
@@ -311,6 +351,30 @@ def _record_by_plot_id(records: list[PlotRecord], plot_id: str) -> PlotRecord:
     return next(record for record in records if record.plot_id == plot_id)
 
 
+def _dataset_by_id(datasets: list[DatasetRecord], dataset_id: str) -> DatasetRecord:
+    return next(dataset for dataset in datasets if dataset.dataset_id == dataset_id)
+
+
+def _draft_datasets_by_id(project_root: Path, dataset_ids: list[str]) -> None:
+    datasets = st.session_state.get("mplgallery_datasets", [])
+    for dataset_id in dataset_ids:
+        try:
+            dataset = _dataset_by_id(datasets, dataset_id)
+            draft_csv_dataset(dataset.path, csv_root=dataset.csv_root, project_root=project_root)
+            _clear_plot_error(dataset.associated_plot_id or dataset_id)
+        except Exception as exc:
+            _set_plot_error(dataset.associated_plot_id or dataset_id, str(exc))
+
+
+def _manifest_root_for_record(project_root: Path, record: PlotRecord) -> Path:
+    source = record.raw_csv or record.plot_csv or record.csv
+    if source is not None:
+        for parent in [source.path.parent, *source.path.parents]:
+            if (parent / ".mplgallery" / "manifest.yaml").exists():
+                return parent
+    return project_root
+
+
 def _set_plot_error(plot_id: str, message: str) -> None:
     errors = dict(component_errors())
     errors[plot_id] = message
@@ -324,6 +388,12 @@ def _clear_plot_error(plot_id: str) -> None:
 
 
 def _remove_cached_preview(project_root: Path, record: PlotRecord) -> None:
+    if record.owned_by_mplgallery:
+        if record.cache and record.cache.cache_path is not None:
+            record.cache.cache_path.with_name(f"{record.cache.cache_path.name}.meta.json").unlink(
+                missing_ok=True
+            )
+        return
     if record.cache and record.cache.cache_path is not None:
         record.cache.cache_path.unlink(missing_ok=True)
         record.cache.cache_path.with_name(f"{record.cache.cache_path.name}.meta.json").unlink(

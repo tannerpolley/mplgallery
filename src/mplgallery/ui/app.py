@@ -7,7 +7,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from mplgallery.core.models import CacheMetadata, PlotRecord
+from mplgallery.core.models import CSVStudioIndex, CacheMetadata, PlotRecord
 from mplgallery.core.renderer import render_cached_plot
 from mplgallery.core.studio import build_csv_studio_index
 from mplgallery.ui.component import (
@@ -26,16 +26,19 @@ def main() -> None:
     _render_host_chrome(project_root)
 
     try:
-        records = _load_records(project_root, include_artifacts=args.include_artifacts)
+        index = _load_index(project_root, include_artifacts=args.include_artifacts)
     except Exception as exc:  # pragma: no cover - Streamlit display path
         st.error(f"Unable to scan project: {exc}")
         return
 
+    records = _render_records(project_root, index.records)
     st.session_state["mplgallery_records"] = records
+    st.session_state["mplgallery_datasets"] = index.datasets
     selected_plot_id = selected_plot_id_from_state_or_query(records)
     payload = build_component_payload(
         project_root=project_root,
         records=records,
+        datasets=index.datasets,
         selected_plot_id=selected_plot_id,
         errors=component_errors(),
     )
@@ -62,18 +65,13 @@ def _render_host_chrome(project_root: Path) -> None:
         }
         header[data-testid="stHeader"] { background: transparent; }
         .block-container {
-            padding: 0.8rem 0.9rem 1rem;
+            padding: 0.25rem 0.7rem 0.8rem;
             max-width: 1920px;
         }
         h1 {
             color: #17202f;
             font-size: 1.35rem !important;
             margin-bottom: 0 !important;
-        }
-        [data-testid="stCaptionContainer"] {
-            color: #6b7483;
-            font-size: 0.72rem;
-            margin-bottom: 0.35rem;
         }
         iframe,
         iframe[title^="mplgallery"],
@@ -95,18 +93,23 @@ def _render_host_chrome(project_root: Path) -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.title("MPLGallery")
-    st.caption(str(project_root))
+    st.markdown(
+        f"""
+        <div style="display:flex;gap:.6rem;align-items:baseline;margin:0 0 .25rem;">
+          <strong style="font-size:1rem;color:#17202f;">MPLGallery</strong>
+          <span style="font-size:.68rem;color:#6b7483;">{project_root}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
-def _load_records(project_root: Path, *, include_artifacts: bool = False) -> list[PlotRecord]:
-    index = build_csv_studio_index(
+def _load_index(project_root: Path, *, include_artifacts: bool = False) -> CSVStudioIndex:
+    return build_csv_studio_index(
         project_root,
-        ensure_drafts=True,
+        ensure_drafts=False,
         include_artifacts=include_artifacts,
     )
-    records = index.records
-    return _render_records(project_root, records)
 
 
 def _render_records(project_root: Path, records: list[PlotRecord]) -> list[PlotRecord]:

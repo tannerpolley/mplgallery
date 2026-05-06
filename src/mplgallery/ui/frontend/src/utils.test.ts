@@ -58,12 +58,9 @@ describe("component utilities", () => {
     expect(filterRecords(records, "", new Set()).map((record) => record.id)).toEqual([]);
   });
 
-  it("defaults checkbox state to all plots before the user filters", () => {
+  it("defaults checkbox state to no plots until the user opts in", () => {
     expect([...plotIdSet(records)].sort()).toEqual(["nested__beta", "plots__alpha"]);
-    expect([...reconcileCheckedPlotIds(records, new Set(), false)].sort()).toEqual([
-      "nested__beta",
-      "plots__alpha",
-    ]);
+    expect([...reconcileCheckedPlotIds(records, new Set(), false)]).toEqual([]);
     expect([...reconcileCheckedPlotIds(records, new Set(), true)]).toEqual([]);
   });
 
@@ -78,9 +75,7 @@ describe("component utilities", () => {
     expect(emptyGalleryMessage(records, "missing", plotIdSet(records), false)).toBe(
       "No plots match this search.",
     );
-    expect(emptyGalleryMessage(records, "", new Set(), true)).toBe(
-      "No plots selected. Check a folder or plot in the output tree.",
-    );
+    expect(emptyGalleryMessage(records, "", new Set(), true)).toBe("Select a CSV or check plots to build a gallery.");
   });
 
   it("normalizes metadata while preserving style choices", () => {

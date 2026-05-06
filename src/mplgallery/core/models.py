@@ -146,6 +146,8 @@ class ScanResult(BaseModel):
 
 
 class DatasetRecord(BaseModel):
+    dataset_id: str
+    display_name: str
     path: Path
     relative_path: Path
     csv_root: Path
@@ -158,6 +160,7 @@ class DatasetRecord(BaseModel):
     recipe_path: Path | None = None
     plot_ready_path: Path | None = None
     cache_path: Path | None = None
+    associated_plot_id: str | None = None
 
 
 class CSVRootRecord(BaseModel):
@@ -166,12 +169,23 @@ class CSVRootRecord(BaseModel):
     datasets: list[DatasetRecord] = Field(default_factory=list)
 
 
+class TablePrepMetadata(BaseModel):
+    selected_columns: list[str] = Field(default_factory=list)
+    label_overrides: dict[str, str] = Field(default_factory=dict)
+    unit_overrides: dict[str, str] = Field(default_factory=dict)
+    filters: list[str] = Field(default_factory=list)
+    reshape: str | None = None
+    computed_columns: dict[str, str] = Field(default_factory=dict)
+
+
 class PlotRecipeRecord(BaseModel):
     version: int = 1
+    draft_engine: str = "matplotlib"
     source_csv_path: Path
     plot_ready_path: Path
     cache_path: Path
     script_path: Path
+    prep: TablePrepMetadata | None = None
     redraw: RedrawMetadata
     status: str = "draft"
     sample_rows: int | None = None
@@ -207,6 +221,9 @@ class PlotRecord(BaseModel):
     cache: CacheMetadata | None = None
     recipe_path: Path | None = None
     mode: PlotMode = PlotMode.STATIC
+    source_dataset_id: str | None = None
+    owned_by_mplgallery: bool = False
+    visibility_role: str = "reference"
     metadata_files: list[Path] = Field(default_factory=list)
     dvc_stage: str | None = None
     mlflow_run_ids: list[str] = Field(default_factory=list)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,17 +23,22 @@ from mplgallery.core.models import (
     DiscoveredFile,
     FileKind,
     ManifestRecord,
-    MatplotlibFigureAttributes,
     PlotMode,
     PlotRecipeRecord,
     PlotRecord,
     RedrawMetadata,
-    SeriesStyle,
+    TablePrepMetadata,
 )
-from mplgallery.core.renderer import DEFAULT_COLOR_CYCLE, render_matplotlib_figure
+from mplgallery.core.pandas_plotting import (
+    generated_script_text,
+    infer_pandas_draft,
+    render_pandas_draft_figure,
+)
 from mplgallery.core.scanner import scan_project
 
-CSV_ROOT_NAMES = {"data", "out", "outputs", "result", "results"}
+CSV_ROOT_NAMES = {"data"}
+RESULT_TABLE_PARTS = ("results", "final", "tables")
+RESULT_FIGURE_PARTS = ("results", "final", "figures")
 STUDIO_IGNORE_DIRS = {
     ".git",
     ".dvc",
@@ -78,14 +83,14 @@ class ArtifactImportResult:
 
 
 def find_csv_roots(project_root: Path | str) -> list[CSVRootRecord]:
-    """Find named CSV folders that MPLGallery owns beside source CSVs."""
+    """Find architecture-standard CSV roots for source and final result tables."""
     root = Path(project_root).expanduser().resolve()
     if not root.exists():
         raise FileNotFoundError(f"Project root does not exist: {root}")
 
     roots: list[CSVRootRecord] = []
     for directory in _walk_candidate_directories(root):
-        if directory.name.lower() not in CSV_ROOT_NAMES:
+        if not _is_architecture_csv_root(directory, root):
             continue
         datasets = [_dataset_record(csv_path, root, directory) for csv_path in _csvs_for_root(directory)]
         if not datasets:
@@ -142,12 +147,17 @@ def build_csv_studio_index(
         else:
             datasets.extend(_non_mutating_dataset_records(csv_root, root))
 
-    imported_artifacts: list[PlotRecord] = []
+    imported_artifacts = _architecture_result_artifact_records(root)
+    records.extend(imported_artifacts)
     if include_artifacts:
         scan = scan_project(root)
         manifest = load_manifests(root)
-        imported_artifacts = build_plot_records(scan, manifest=manifest)
-        records.extend(imported_artifacts)
+        broad_artifacts = build_plot_records(scan, manifest=manifest)
+        existing_paths = {record.image.path for record in records}
+        for record in broad_artifacts:
+            if record.image.path not in existing_paths:
+                records.append(record)
+                imported_artifacts.append(record)
         ignored_count += scan.ignored_dir_count
 
     return CSVStudioIndex(
@@ -190,6 +200,34 @@ def draft_csv_root(
     )
 
 
+def draft_csv_dataset(
+    csv_path: Path | str,
+    *,
+    csv_root: Path | str | None = None,
+    project_root: Path | str | None = None,
+    sample_rows: int = DEFAULT_SAMPLE_ROWS,
+) -> CSVStudioIndex:
+    """Create or refresh a draft for one source CSV."""
+    source = Path(csv_path).expanduser().resolve()
+    root = (
+        Path(csv_root).expanduser().resolve()
+        if csv_root is not None
+        else _infer_csv_root_for_dataset(source, project_root)
+    )
+    project = Path(project_root).expanduser().resolve() if project_root is not None else root
+    workspace = init_csv_root(root)
+    manifest = load_manifest(root)
+    dataset, record = _draft_csv(source, root, project, workspace, manifest, sample_rows)
+    save_manifest(root, manifest)
+    records = [record] if record is not None else []
+    return CSVStudioIndex(
+        project_root=project,
+        csv_roots=[CSVRootRecord(path=root, relative_path=_relative_to(root, project), datasets=[dataset])],
+        datasets=[dataset],
+        records=records,
+    )
+
+
 def import_artifact_references(folder: Path | str) -> ArtifactImportResult:
     """Import PNG/SVG files under a folder as reference-only manifest records."""
     root = Path(folder).expanduser().resolve()
@@ -211,6 +249,75 @@ def import_artifact_references(folder: Path | str) -> ArtifactImportResult:
         imported_count=len(imported),
         imported_paths=tuple(imported),
     )
+
+
+def _architecture_result_artifact_records(project_root: Path) -> list[PlotRecord]:
+    records: list[PlotRecord] = []
+    manifest_records = _manifest_records_by_absolute_plot(project_root)
+    for figures_dir in _architecture_result_figure_dirs(project_root):
+        for path in sorted(figures_dir.rglob("*"), key=lambda item: item.relative_to(project_root).as_posix().lower()):
+            if not path.is_file() or path.suffix.lower() not in {".png", ".svg"}:
+                continue
+            image = _discovered_file(path, project_root, FileKind.IMAGE)
+            manifest_match = manifest_records.get(path.resolve())
+            if manifest_match is not None:
+                manifest_root, manifest_record = manifest_match
+                source_csv = _resolved_manifest_path(manifest_root, manifest_record.raw_csv_path or manifest_record.csv_path)
+                plot_csv = _resolved_manifest_path(manifest_root, manifest_record.plot_csv_path or manifest_record.csv_path)
+                raw_discovered = (
+                    _discovered_file(source_csv, project_root, FileKind.CSV)
+                    if source_csv is not None and source_csv.exists()
+                    else None
+                )
+                plot_discovered = (
+                    _discovered_file(plot_csv, project_root, FileKind.CSV)
+                    if plot_csv is not None and plot_csv.exists()
+                    else None
+                )
+                owned = manifest_record.notes == "MPLGallery CSV draft"
+                records.append(
+                    PlotRecord(
+                        plot_id=_plot_id(image.relative_path),
+                        image=image,
+                        csv=plot_discovered,
+                        raw_csv=raw_discovered,
+                        plot_csv=plot_discovered,
+                        association_confidence=AssociationConfidence.EXACT
+                        if plot_discovered is not None
+                        else AssociationConfidence.NONE,
+                        association_reason=manifest_record.notes or "Architecture result figure",
+                        redraw=manifest_record.redraw,
+                        cache=CacheMetadata(cache_path=path) if owned else None,
+                        recipe_path=_recipe_path_for_csv(source_csv, manifest_root)
+                        if source_csv is not None and source_csv.exists()
+                        else None,
+                        mode=PlotMode.RECIPE if owned else PlotMode.STATIC,
+                        source_dataset_id=_dataset_id(_relative_to(source_csv, project_root))
+                        if source_csv is not None
+                        else None,
+                        owned_by_mplgallery=owned,
+                        visibility_role="draft" if owned else "reference",
+                    )
+                )
+                continue
+            records.append(
+                PlotRecord(
+                    plot_id=_plot_id(image.relative_path),
+                    image=image,
+                    association_confidence=AssociationConfidence.NONE,
+                    association_reason="Architecture result figure",
+                    mode=PlotMode.STATIC,
+                )
+            )
+    return records
+
+
+def _architecture_result_figure_dirs(project_root: Path) -> list[Path]:
+    directories: list[Path] = []
+    for directory in _walk_candidate_directories(project_root):
+        if _path_has_suffix_parts(directory, project_root, RESULT_FIGURE_PARTS):
+            directories.append(directory)
+    return sorted(directories, key=lambda item: item.relative_to(project_root).as_posix().lower())
 
 
 def _draft_csv(
@@ -240,24 +347,32 @@ def _draft_csv(
             None,
         )
 
+    draft = infer_pandas_draft(csv_path.relative_to(csv_root), frame)
+    if draft is None:
+        return dataset.model_copy(update={"draft_status": "no_draft_plot"}), None
+
     slug = _recipe_slug(csv_path.relative_to(csv_root))
     plot_ready_path = workspace.plot_ready_dir / f"{slug}.csv"
     recipe_path = workspace.recipes_dir / f"{slug}.yaml"
     script_path = workspace.scripts_dir / f"render_{slug}.py"
-    cache_path = workspace.cache_dir / f"{slug}.svg"
-    redraw, plot_frame = _infer_draft_redraw(csv_path, frame, numeric_columns, categorical_columns)
+    cache_path = _draft_figure_path(csv_root, project_root, csv_path.relative_to(csv_root), slug)
+    redraw = draft.redraw
+    plot_frame = draft.plot_frame
     plot_ready_path.parent.mkdir(parents=True, exist_ok=True)
     plot_frame.to_csv(plot_ready_path, index=False)
 
-    manifest_record = manifest.record_for_plot(cache_path.relative_to(csv_root))
+    manifest_plot_path = _relative_path_between(cache_path, csv_root)
+    manifest_record = manifest.record_for_plot(manifest_plot_path)
     if manifest_record and manifest_record.redraw is not None:
         redraw = manifest_record.redraw
 
     recipe = PlotRecipeRecord(
+        draft_engine="pandas",
         source_csv_path=csv_path.relative_to(csv_root),
         plot_ready_path=plot_ready_path.relative_to(csv_root),
-        cache_path=cache_path.relative_to(csv_root),
+        cache_path=manifest_plot_path,
         script_path=script_path.relative_to(csv_root),
+        prep=TablePrepMetadata(selected_columns=[str(column) for column in plot_frame.columns]),
         redraw=redraw,
         sample_rows=sample_rows,
     )
@@ -275,7 +390,7 @@ def _draft_csv(
     )
     manifest.upsert_record(
         ManifestRecord(
-            plot_path=cache_path.relative_to(csv_root),
+            plot_path=manifest_plot_path,
             raw_csv_path=csv_path.relative_to(csv_root),
             plot_csv_path=plot_ready_path.relative_to(csv_root),
             redraw=redraw,
@@ -293,59 +408,10 @@ def _draft_csv(
                 "recipe_path": recipe_path,
                 "plot_ready_path": plot_ready_path,
                 "cache_path": cache_path,
+                "associated_plot_id": record.plot_id,
             }
         ),
         record,
-    )
-
-
-def _infer_draft_redraw(
-    csv_path: Path,
-    frame: pd.DataFrame,
-    numeric_columns: list[str],
-    categorical_columns: list[str],
-) -> tuple[RedrawMetadata, pd.DataFrame]:
-    plot_frame = frame.copy()
-    title = _human_title(csv_path.stem)
-    if categorical_columns and len(numeric_columns) == 1:
-        x_column = categorical_columns[0]
-        y_columns = [numeric_columns[0]]
-        kind = "bar"
-    elif len(numeric_columns) >= 2:
-        x_column = numeric_columns[0]
-        y_columns = numeric_columns[1:5]
-        kind = "line"
-    else:
-        x_column = "mplgallery_index"
-        y_columns = [numeric_columns[0]]
-        plot_frame.insert(0, x_column, range(len(plot_frame)))
-        kind = "line"
-
-    series = [
-        SeriesStyle(
-            y=column,
-            label=_human_title(column),
-            color=DEFAULT_COLOR_CYCLE[index % len(DEFAULT_COLOR_CYCLE)],
-            linewidth=1.6,
-            marker="o" if kind == "line" else None,
-            markersize=4 if kind == "line" else None,
-            alpha=0.9,
-        )
-        for index, column in enumerate(y_columns)
-    ]
-    return (
-        RedrawMetadata(
-            kind=kind,
-            x=x_column,
-            y=y_columns,
-            title=title,
-            xlabel=_human_title(x_column),
-            ylabel=_human_title(y_columns[0]) if len(y_columns) == 1 else "Value",
-            grid=True,
-            figure=MatplotlibFigureAttributes(width_inches=7.0, height_inches=4.5, dpi=150),
-            series=series,
-        ),
-        plot_frame,
     )
 
 
@@ -361,8 +427,9 @@ def _render_record(
     script_path: Path,
 ) -> PlotRecord:
     frame = pd.read_csv(plot_ready_csv)
-    fig, _ax = render_matplotlib_figure(frame, redraw, fallback_title=cache_path.stem)
+    fig, _ax = render_pandas_draft_figure(frame, redraw, fallback_title=cache_path.stem)
     try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         fig.tight_layout()
         fig.savefig(cache_path, format="svg")
     finally:
@@ -388,6 +455,9 @@ def _render_record(
         ),
         recipe_path=recipe_path,
         mode=PlotMode.RECIPE,
+        source_dataset_id=_dataset_id(raw_csv.relative_path),
+        owned_by_mplgallery=True,
+        visibility_role="draft",
         metadata_files=[recipe_path, script_path],
     )
 
@@ -398,15 +468,22 @@ def _non_mutating_dataset_records(csv_root: CSVRootRecord, project_root: Path) -
     for csv_path in _csvs_for_root(csv_root.path):
         recipe_path = _recipe_path_for_csv(csv_path, csv_root.path)
         matched = _manifest_record_for_source(manifest, csv_path.relative_to(csv_root.path))
+        plot_path = _resolved_manifest_path(csv_root.path, matched.plot_path) if matched else None
+        plot_ready_path = (
+            _resolved_manifest_path(csv_root.path, matched.plot_csv_path)
+            if matched and matched.plot_csv_path
+            else None
+        )
         records.append(
             _dataset_record(csv_path, project_root, csv_root.path).model_copy(
                 update={
                     "draft_status": "drafted" if recipe_path.exists() else "not_initialized",
                     "recipe_path": recipe_path if recipe_path.exists() else None,
-                    "plot_ready_path": csv_root.path / matched.plot_csv_path
-                    if matched and matched.plot_csv_path
+                    "plot_ready_path": plot_ready_path,
+                    "cache_path": plot_path,
+                    "associated_plot_id": _plot_id(_relative_to(plot_path, project_root))
+                    if plot_path and plot_path.exists()
                     else None,
-                    "cache_path": csv_root.path / matched.plot_path if matched else None,
                 }
             )
         )
@@ -443,6 +520,8 @@ def _dataset_record(
         categorical_columns = [column for column in columns if column not in numeric_columns]
         row_count = len(frame)
     return DatasetRecord(
+        dataset_id=_dataset_id(_relative_to(csv_path, project_root)),
+        display_name=csv_path.name,
         path=csv_path,
         relative_path=_relative_to(csv_path, project_root),
         csv_root=csv_root,
@@ -473,6 +552,20 @@ def _csvs_for_root(directory: Path) -> list[Path]:
             continue
         csvs.append(path)
     return sorted(csvs, key=lambda path: path.relative_to(directory).as_posix().lower())
+
+
+def _is_architecture_csv_root(directory: Path, project_root: Path) -> bool:
+    if directory.name.lower() in CSV_ROOT_NAMES:
+        return True
+    return _path_has_suffix_parts(directory, project_root, RESULT_TABLE_PARTS)
+
+
+def _path_has_suffix_parts(path: Path, root: Path, suffix_parts: tuple[str, ...]) -> bool:
+    try:
+        parts = tuple(part.lower() for part in path.relative_to(root).parts)
+    except ValueError:
+        return False
+    return len(parts) >= len(suffix_parts) and parts[-len(suffix_parts) :] == suffix_parts
 
 
 def _walk_candidate_directories(root: Path) -> list[Path]:
@@ -523,8 +616,66 @@ def _numeric_columns(frame: pd.DataFrame) -> list[str]:
 def _recipe_slug(relative_csv_path: Path) -> str:
     normalized = relative_csv_path.with_suffix("").as_posix()
     stem = re.sub(r"[^A-Za-z0-9]+", "_", normalized).strip("_").lower() or "table"
-    digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:8]
-    return f"{stem}_{digest}"
+    return stem
+
+
+def _dataset_id(relative_path: Path) -> str:
+    return relative_path.with_suffix("").as_posix().replace("/", "__")
+
+
+def _draft_figure_path(csv_root: Path, project_root: Path, relative_csv_path: Path, slug: str) -> Path:
+    figures_dir = _draft_figures_dir(csv_root, project_root)
+    return figures_dir / f"{slug}.svg"
+
+
+def _draft_figures_dir(csv_root: Path, project_root: Path) -> Path:
+    if _path_has_suffix_parts(csv_root, project_root, RESULT_TABLE_PARTS):
+        return csv_root.parent / "figures" / "mplgallery"
+    if csv_root.name.lower() == "data":
+        return csv_root.parent / "results" / "final" / "figures" / "mplgallery"
+    return project_root / "results" / "final" / "figures" / "mplgallery"
+
+
+def _relative_path_between(path: Path, root: Path) -> Path:
+    return Path(os.path.relpath(path, root))
+
+
+def _resolved_manifest_path(manifest_root: Path, path: Path | None) -> Path | None:
+    if path is None:
+        return None
+    candidate = path if path.is_absolute() else manifest_root / path
+    return candidate.resolve()
+
+
+def _manifest_records_by_absolute_plot(project_root: Path) -> dict[Path, tuple[Path, ManifestRecord]]:
+    matches: dict[Path, tuple[Path, ManifestRecord]] = {}
+    for manifest_path in project_root.rglob(".mplgallery/manifest.yaml"):
+        manifest_root = manifest_path.parent.parent
+        if _is_ignored_directory(manifest_root, project_root):
+            continue
+        manifest = load_manifest(manifest_root)
+        for record in manifest.records:
+            plot_path = _resolved_manifest_path(manifest_root, record.plot_path)
+            if plot_path is not None:
+                matches[plot_path] = (manifest_root, record)
+    return matches
+
+
+def _infer_csv_root_for_dataset(csv_path: Path, project_root: Path | str | None) -> Path:
+    if project_root is not None:
+        project = Path(project_root).expanduser().resolve()
+        containing_roots = [
+            root.path for root in find_csv_roots(project) if csv_path == root.path or csv_path.is_relative_to(root.path)
+        ]
+        if containing_roots:
+            return max(containing_roots, key=lambda path: len(path.parts))
+    for parent in [csv_path.parent, *csv_path.parents]:
+        if parent.name.lower() in CSV_ROOT_NAMES:
+            return parent
+        parts = tuple(part.lower() for part in parent.parts)
+        if len(parts) >= len(RESULT_TABLE_PARTS) and parts[-len(RESULT_TABLE_PARTS) :] == RESULT_TABLE_PARTS:
+            return parent
+    return csv_path.parent
 
 
 def _recipe_path_for_csv(csv_path: Path, csv_root: Path) -> Path:
@@ -544,69 +695,7 @@ def _write_render_script(script_path: Path, recipe: PlotRecipeRecord) -> None:
     script_path.parent.mkdir(parents=True, exist_ok=True)
     payload = recipe.redraw.model_dump(mode="json", exclude_none=True)
     script_path.write_text(
-        "\n".join(
-            [
-                '"""Reproducible draft render script generated by MPLGallery."""',
-                "",
-                "from __future__ import annotations",
-                "",
-                "from pathlib import Path",
-                "",
-                "import matplotlib.pyplot as plt",
-                "import pandas as pd",
-                "",
-                "",
-                "ROOT = Path(__file__).resolve().parents[2]",
-                f"PLOT_READY_CSV = ROOT / {recipe.plot_ready_path.as_posix()!r}",
-                f"CACHE_PATH = ROOT / {recipe.cache_path.as_posix()!r}",
-                f"REDRAW = {payload!r}",
-                "",
-                "",
-                "def main() -> None:",
-                "    frame = pd.read_csv(PLOT_READY_CSV)",
-                "    fig, ax = plt.subplots(figsize=(",
-                "        REDRAW.get('figure', {}).get('width_inches', 7.0),",
-                "        REDRAW.get('figure', {}).get('height_inches', 4.5),",
-                "    ), dpi=REDRAW.get('figure', {}).get('dpi', 150))",
-                "    x = REDRAW.get('x') or frame.columns[0]",
-                "    kind = REDRAW.get('kind', 'line')",
-                "    for series in REDRAW.get('series', []):",
-                "        y = series['y']",
-                "        kwargs = {",
-                "            'label': series.get('label') or y,",
-                "            'color': series.get('color'),",
-                "            'alpha': series.get('alpha'),",
-                "        }",
-                "        if kind == 'bar':",
-                "            ax.bar(frame[x], frame[y], **kwargs)",
-                "        elif kind == 'scatter':",
-                "            ax.scatter(frame[x], frame[y], **kwargs)",
-                "        else:",
-                "            ax.plot(",
-                "                frame[x],",
-                "                frame[y],",
-                "                linewidth=series.get('linewidth', 1.6),",
-                "                linestyle=series.get('linestyle') or '-',",
-                "                marker=series.get('marker'),",
-                "                markersize=series.get('markersize', 4),",
-                "                **kwargs,",
-                "            )",
-                "    ax.set_title(REDRAW.get('title') or CACHE_PATH.stem)",
-                "    ax.set_xlabel(REDRAW.get('xlabel') or x)",
-                "    ax.set_ylabel(REDRAW.get('ylabel') or '')",
-                "    ax.grid(bool(REDRAW.get('grid', True)), alpha=0.25)",
-                "    ax.legend(loc=REDRAW.get('legend_location') or 'best')",
-                "    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)",
-                "    fig.tight_layout()",
-                "    fig.savefig(CACHE_PATH)",
-                "    plt.close(fig)",
-                "",
-                "",
-                "if __name__ == '__main__':",
-                "    main()",
-                "",
-            ]
-        ),
+        generated_script_text(payload, recipe.plot_ready_path, recipe.cache_path),
         encoding="utf-8",
     )
 
@@ -641,7 +730,3 @@ def _relative_to(path: Path, root: Path) -> Path:
 
 def _plot_id(relative_path: Path) -> str:
     return relative_path.with_suffix("").as_posix().replace("/", "__")
-
-
-def _human_title(value: str) -> str:
-    return value.replace("_", " ").replace("-", " ").strip().title()

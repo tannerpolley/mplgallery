@@ -7,7 +7,15 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Streamlit } from "streamlit-component-lib";
-import type { BrowserPayload, PlotRecord, RedrawMetadata, SeriesStyle, SubplotMetadata, TreeNode } from "./types";
+import type {
+  BrowserPayload,
+  DatasetRecord,
+  PlotRecord,
+  RedrawMetadata,
+  SeriesStyle,
+  SubplotMetadata,
+  TreeNode,
+} from "./types";
 import {
   buildTree,
   clampNumber,
@@ -30,6 +38,7 @@ type StreamlitProps = {
 const emptyPayload: BrowserPayload = {
   projectRoot: "",
   selectedPlotId: null,
+  datasets: [],
   records: [],
   options: {
     plotKinds: ["line", "scatter", "bar", "barh", "area", "hist", "step"],
@@ -56,34 +65,43 @@ const layoutBounds = {
 
 function App(props: StreamlitProps) {
   const payload = props.payload ?? emptyPayload;
-  const [selectedPlotId, setSelectedPlotId] = useState<string | null>(
-    payload.selectedPlotId ?? payload.records[0]?.id ?? null,
-  );
+  const [selectedPlotId, setSelectedPlotId] = useState<string | null>(payload.selectedPlotId ?? null);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState(".");
-  const [checkedPlotIds, setCheckedPlotIds] = useState<Set<string>>(() => plotIdSet(payload.records));
+  const [checkedPlotIds, setCheckedPlotIds] = useState<Set<string>>(() => new Set());
+  const [checkedDatasetIds, setCheckedDatasetIds] = useState<Set<string>>(() => new Set());
   const [hasUserFilter, setHasUserFilter] = useState(false);
   const [query, setQuery] = useState("");
   const [tileSize, setTileSize] = useState(230);
   const [maximizedPlotId, setMaximizedPlotId] = useState<string | null>(null);
   const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useState(defaultLayout);
+  const [treeCollapsed, setTreeCollapsed] = useState(false);
 
   useEffect(() => {
-    setSelectedPlotId(payload.selectedPlotId ?? payload.records[0]?.id ?? null);
-  }, [payload.selectedPlotId, payload.records]);
+    setSelectedPlotId(payload.selectedPlotId ?? null);
+  }, [payload.selectedPlotId]);
 
   useEffect(() => {
     setCheckedPlotIds((current) => reconcileCheckedPlotIds(payload.records, current, hasUserFilter));
   }, [payload.records, hasUserFilter]);
 
-  const tree = useMemo(() => buildTree(payload.records), [payload.records]);
-  const effectiveCheckedPlotIds = useMemo(
-    () => (hasUserFilter ? checkedPlotIds : plotIdSet(payload.records)),
-    [checkedPlotIds, hasUserFilter, payload.records],
+  const referenceRecords = useMemo(
+    () => payload.records.filter((record) => record.visibilityRole !== "draft"),
+    [payload.records],
   );
+  const tree = useMemo(() => buildTree(referenceRecords), [referenceRecords]);
+  const effectiveCheckedPlotIds = useMemo(
+    () => checkedPlotIds,
+    [checkedPlotIds],
+  );
+  const selectedDataset = payload.datasets.find((dataset) => dataset.id === selectedDatasetId) ?? null;
+  const selectedDatasetRecord = selectedDataset?.associatedPlotId
+    ? payload.records.find((record) => record.id === selectedDataset.associatedPlotId) ?? null
+    : null;
   const visibleRecords = useMemo(
-    () => filterRecords(payload.records, query, effectiveCheckedPlotIds),
-    [payload.records, query, effectiveCheckedPlotIds],
+    () => (selectedDatasetId ? (selectedDatasetRecord ? [selectedDatasetRecord] : []) : filterRecords(payload.records, query, effectiveCheckedPlotIds)),
+    [payload.records, query, effectiveCheckedPlotIds, selectedDatasetId, selectedDatasetRecord],
   );
   const status = useMemo(() => galleryStatus(payload.records), [payload.records]);
   const noVisiblePlotsMessage = emptyGalleryMessage(
@@ -93,12 +111,39 @@ function App(props: StreamlitProps) {
     hasUserFilter,
   );
   const selectedRecord =
-    payload.records.find((record) => record.id === selectedPlotId) ?? payload.records[0] ?? null;
+    selectedDatasetRecord ?? payload.records.find((record) => record.id === selectedPlotId) ?? null;
   const maximizedRecord =
     payload.records.find((record) => record.id === maximizedPlotId) ?? selectedRecord;
 
   function selectPlot(plotId: string) {
+    setSelectedDatasetId(null);
     setSelectedPlotId(plotId);
+  }
+
+  function selectDataset(datasetId: string) {
+    const dataset = payload.datasets.find((item) => item.id === datasetId) ?? null;
+    setSelectedDatasetId(datasetId);
+    setSelectedPlotId(dataset?.associatedPlotId ?? null);
+  }
+
+  function draftDataset(datasetId: string) {
+    Streamlit.setComponentValue({
+      event: {
+        id: eventId("draft_dataset"),
+        type: "draft_dataset",
+        dataset_id: datasetId,
+      },
+    });
+  }
+
+  function draftCheckedDatasets() {
+    Streamlit.setComponentValue({
+      event: {
+        id: eventId("draft_checked_datasets"),
+        type: "draft_checked_datasets",
+        dataset_ids: [...checkedDatasetIds],
+      },
+    });
   }
 
   function maximizePlot(plotId: string) {
@@ -151,51 +196,80 @@ function App(props: StreamlitProps) {
   } as CSSProperties;
 
   return (
-    <div className="mg-shell" style={shellStyle}>
+    <div className={`mg-shell ${treeCollapsed ? "is-tree-collapsed" : ""}`} style={shellStyle}>
       <aside className="mg-tree-panel" aria-label="Output tree">
-        <div className="mg-panel-title">Output tree</div>
-        <label className="mg-sr-only" htmlFor="plot-search">
-          Search plots or CSV files
-        </label>
-        <input
-          id="plot-search"
-          className="mg-search"
-          value={query}
-          placeholder="Search plots or CSV files"
-          onChange={(event) => updateQuery(event.target.value)}
-        />
-        <Tree
-          node={tree}
-          records={payload.records}
-          selectedFolder={selectedFolder}
-          selectedPlotId={selectedPlotId}
-          checkedPlotIds={effectiveCheckedPlotIds}
-          onSelectFolder={setSelectedFolder}
-          onSelectPlot={selectPlot}
-          onToggleFolder={(path, checked) => {
-            setHasUserFilter(true);
-            setCheckedPlotIds((current) => {
-              const next = new Set(hasUserFilter ? current : plotIdSet(payload.records));
-              const folderPlotIds = payload.records
-                .filter((record) => foldersFor(record).includes(path))
-                .map((record) => record.id);
-              folderPlotIds.forEach((plotId) => {
-                if (checked) next.add(plotId);
-                else next.delete(plotId);
-              });
-              return next;
-            });
-          }}
-          onTogglePlot={(plotId, checked) => {
-            setHasUserFilter(true);
-            setCheckedPlotIds((current) => {
-              const next = new Set(hasUserFilter ? current : plotIdSet(payload.records));
-              if (checked) next.add(plotId);
-              else next.delete(plotId);
-              return next;
-            });
-          }}
-        />
+        <div className="mg-tree-head">
+          {treeCollapsed ? null : <div className="mg-panel-title">Output tree</div>}
+          <button
+            type="button"
+            className="mg-tree-collapse"
+            aria-expanded={!treeCollapsed}
+            aria-label={treeCollapsed ? "Show output tree" : "Hide output tree"}
+            onClick={() => setTreeCollapsed((current) => !current)}
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+        </div>
+        {treeCollapsed ? null : (
+          <>
+            <label className="mg-sr-only" htmlFor="plot-search">
+              Search plots or CSV files
+            </label>
+            <input
+              id="plot-search"
+              className="mg-search"
+              value={query}
+              placeholder="Search plots or CSV files"
+              onChange={(event) => updateQuery(event.target.value)}
+            />
+            <Tree
+              node={tree}
+              records={referenceRecords}
+              selectedFolder={selectedFolder}
+              selectedPlotId={selectedPlotId}
+              checkedPlotIds={effectiveCheckedPlotIds}
+              onSelectFolder={setSelectedFolder}
+              onSelectPlot={selectPlot}
+              onToggleFolder={(path, checked) => {
+                setHasUserFilter(true);
+                setCheckedPlotIds((current) => {
+                  const next = new Set(current);
+                  const folderPlotIds = referenceRecords
+                    .filter((record) => foldersFor(record).includes(path))
+                    .map((record) => record.id);
+                  folderPlotIds.forEach((plotId) => {
+                    if (checked) next.add(plotId);
+                    else next.delete(plotId);
+                  });
+                  return next;
+                });
+              }}
+              onTogglePlot={(plotId, checked) => {
+                setHasUserFilter(true);
+                setCheckedPlotIds((current) => {
+                  const next = new Set(current);
+                  if (checked) next.add(plotId);
+                  else next.delete(plotId);
+                  return next;
+                });
+              }}
+            />
+            <DatasetList
+              datasets={payload.datasets}
+              selectedDatasetId={selectedDatasetId}
+              checkedDatasetIds={checkedDatasetIds}
+              onSelectDataset={selectDataset}
+              onToggleDataset={(datasetId, checked) => {
+                setCheckedDatasetIds((current) => {
+                  const next = new Set(current);
+                  if (checked) next.add(datasetId);
+                  else next.delete(datasetId);
+                  return next;
+                });
+              }}
+            />
+          </>
+        )}
       </aside>
 
       <div
@@ -214,25 +288,38 @@ function App(props: StreamlitProps) {
       <main className="mg-workspace" aria-label="Plot workspace">
         <div className="mg-workspace-header">
           <div>
-            <div className="mg-eyebrow">{payload.records.length} indexed plots</div>
-            <h2>{selectedRecord?.name ?? "No plot selected"}</h2>
+            <div className="mg-eyebrow">{payload.datasets.length} CSV tables</div>
+            <div className="mg-workspace-title">CSV plot studio</div>
           </div>
           <div className="mg-header-actions">
+            {selectedDataset ? (
+              <button className="mg-primary" type="button" onClick={() => draftDataset(selectedDataset.id)}>
+                Generate draft
+              </button>
+            ) : null}
+            {checkedDatasetIds.size ? (
+              <button className="mg-inspector-toggle" type="button" onClick={draftCheckedDatasets}>
+                Draft checked CSVs
+              </button>
+            ) : null}
+            <details className="mg-status-menu">
+              <summary>Status</summary>
+              <div className="mg-status-popover" aria-label="Project status">
+                <span>{status.totalPlots} plots</span>
+                <span>{status.matchedCsvs} CSV matched</span>
+                <span className={status.missingCsvs ? "is-warning" : ""}>{status.missingCsvs} missing CSV</span>
+                <span className={status.renderErrors ? "is-warning" : ""}>{status.renderErrors} render errors</span>
+              </div>
+            </details>
             <button className="mg-inspector-toggle" type="button" onClick={() => setLayout(defaultLayout)}>
               Reset layout
             </button>
           </div>
         </div>
-        <div className="mg-status-strip" aria-label="Project status">
-          <span>{status.totalPlots} plots</span>
-          <span>{status.matchedCsvs} CSV matched</span>
-          <span className={status.missingCsvs ? "is-warning" : ""}>{status.missingCsvs} missing CSV</span>
-          <span className={status.renderErrors ? "is-warning" : ""}>{status.renderErrors} render errors</span>
-        </div>
         <section className="mg-gallery" aria-label="Plot gallery">
           <div className="mg-gallery-toolbar">
             <strong>
-              {visibleRecords.length} plot{visibleRecords.length === 1 ? "" : "s"}
+              {selectedDataset ? selectedDataset.displayName : `${visibleRecords.length} plot${visibleRecords.length === 1 ? "" : "s"}`}
             </strong>
             <label>
               Tile size
@@ -263,7 +350,13 @@ function App(props: StreamlitProps) {
                   });
                 }}
               />
-            )) : <div className="mg-empty">{noVisiblePlotsMessage}</div>}
+            )) : (
+              <EmptyGallery
+                message={selectedDataset ? datasetEmptyMessage(selectedDataset) : noVisiblePlotsMessage}
+                actionLabel={selectedDataset ? "Generate draft plot" : undefined}
+                onAction={selectedDataset ? () => draftDataset(selectedDataset.id) : undefined}
+              />
+            )}
           </div>
         </section>
       </main>
@@ -288,6 +381,95 @@ function App(props: StreamlitProps) {
       ) : null}
     </div>
   );
+}
+
+function DatasetList({
+  datasets,
+  selectedDatasetId,
+  checkedDatasetIds,
+  onSelectDataset,
+  onToggleDataset,
+}: {
+  datasets: DatasetRecord[];
+  selectedDatasetId: string | null;
+  checkedDatasetIds: Set<string>;
+  onSelectDataset: (datasetId: string) => void;
+  onToggleDataset: (datasetId: string, checked: boolean) => void;
+}) {
+  const roots = groupDatasetsByRoot(datasets);
+  return (
+    <div className="mg-dataset-tree" aria-label="CSV datasets">
+      <div className="mg-tree-section-title">CSV tables</div>
+      {roots.map(([root, rootDatasets]) => (
+        <details key={root} open>
+          <summary>
+            <span>{root || "data"}</span>
+            <span className="mg-count">{rootDatasets.length}</span>
+          </summary>
+          {rootDatasets.map((dataset) => (
+            <div
+              key={dataset.id}
+              className={`mg-tree-row mg-tree-dataset ${selectedDatasetId === dataset.id ? "is-selected" : ""}`}
+              role="treeitem"
+              aria-selected={selectedDatasetId === dataset.id}
+            >
+              <input
+                type="checkbox"
+                className="mg-tree-check"
+                aria-label={`Include CSV ${dataset.displayName}`}
+                checked={checkedDatasetIds.has(dataset.id)}
+                onChange={(event) => onToggleDataset(dataset.id, event.target.checked)}
+              />
+              <button type="button" className="mg-tree-label" onClick={() => onSelectDataset(dataset.id)}>
+                <span className="mg-tree-name">{dataset.displayName}</span>
+                <span className={`mg-status-dot is-${dataset.draftStatus}`} title={dataset.draftStatus} />
+              </button>
+            </div>
+          ))}
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function groupDatasetsByRoot(datasets: DatasetRecord[]): [string, DatasetRecord[]][] {
+  const groups = new Map<string, DatasetRecord[]>();
+  datasets.forEach((dataset) => {
+    const label = dataset.csvRootPath || dataset.csvRootId || "data";
+    groups.set(label, [...(groups.get(label) ?? []), dataset]);
+  });
+  return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+}
+
+function EmptyGallery({
+  message,
+  actionLabel,
+  onAction,
+}: {
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="mg-empty">
+      <span>{message}</span>
+      {actionLabel && onAction ? (
+        <button type="button" className="mg-primary" onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function datasetEmptyMessage(dataset: DatasetRecord): string {
+  if (dataset.draftStatus === "no_numeric_columns") {
+    return "This CSV has no numeric columns to draft automatically.";
+  }
+  if (dataset.draftStatus === "empty_csv") {
+    return "This CSV is empty.";
+  }
+  return "No draft plot exists for this CSV yet.";
 }
 
 function Tree({
@@ -372,7 +554,6 @@ function Tree({
           <button
             type="button"
             className="mg-tree-label"
-            title={current.path}
             onClick={() => onSelectFolder(current.path)}
           >
             <span className="mg-tree-name">{current.label}</span>
@@ -404,7 +585,6 @@ function Tree({
                 <button
                   type="button"
                   className="mg-tree-label"
-                  title={record.imagePath}
                   onClick={() => {
                     onSelectFolder(current.path);
                     onSelectPlot(record.id);
@@ -449,7 +629,6 @@ function SelectedPlot({
         </div>
       ) : null}
       <img src={record.imageSrc} alt={record.name} />
-      <div className="mg-caption">{record.imagePath}</div>
     </section>
   );
 }
@@ -530,8 +709,10 @@ function PlotLookModal({
             Close
           </button>
         </div>
-        <SelectedPlot record={record} error={error} variant="modal" />
-        <Inspector payload={payload} record={record} onSave={onSave} />
+        <div className="mg-modal-plot">
+          <SelectedPlot record={record} error={error} variant="modal" />
+          <Inspector payload={payload} record={record} onSave={onSave} />
+        </div>
       </section>
     </div>
   );
@@ -650,7 +831,7 @@ function Inspector({
       ) : null}
 
       {hasSubplots ? (
-        <details open>
+        <details>
           <summary>Subplots</summary>
           <div className="mg-subplot-tabs" role="tablist" aria-label="Subplot panels">
             {subplots.map((subplot, index) => (
@@ -670,7 +851,7 @@ function Inspector({
         </details>
       ) : null}
 
-      <details open>
+      <details>
         <summary>Axes</summary>
         <label>
           Plot type
@@ -901,7 +1082,7 @@ function Inspector({
         </div>
       </details>
 
-      <details open>
+      <details>
         <summary>Series</summary>
         {editableSeries.map((style, index) => (
           <fieldset key={`${style.y}-${index}`} className="mg-series">
@@ -1047,11 +1228,11 @@ function Inspector({
         <summary>Provenance</summary>
         <dl className="mg-provenance">
           <dt>Raw CSV</dt>
-          <dd>{record.rawCsvPath ?? "Not configured"}</dd>
+          <dd>{record.rawCsvPath ? "Configured" : "Not configured"}</dd>
           <dt>Render CSV</dt>
-          <dd>{record.csvPath ?? "Unmatched"}</dd>
+          <dd>{record.csvPath ? "Matched" : "Unmatched"}</dd>
           <dt>Cache</dt>
-          <dd>{record.cachePath ?? "Not rendered"}</dd>
+          <dd>{record.cachePath ? "Rendered" : "Not rendered"}</dd>
           <dt>Match</dt>
           <dd>{record.reason ?? record.confidence}</dd>
         </dl>

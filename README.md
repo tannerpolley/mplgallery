@@ -1,8 +1,9 @@
 # mplgallery
 
 `mplgallery` is a local-first CSV Plot Studio for Python analysis projects. It
-expects an opinionated analysis layout, discovers CSV tables under `data/` and
-other output folders, drafts editable Matplotlib plots, and stores
+expects an opinionated analysis layout, discovers CSV tables under
+`analyses/<id>/data/` and `analyses/<id>/results/final/tables/`, drafts editable
+Matplotlib plots, and stores
 MPLGallery-owned recipes, scripts, plot-ready CSVs, and cached previews inside a
 colocated `.mplgallery/` folder.
 
@@ -54,10 +55,11 @@ mplgallery scan /path/to/project --json
 mplgallery validate /path/to/project
 ```
 
-`scan` reports discovered CSV roots and draft status without importing arbitrary
-PNG/SVG files. `validate` reports manifest references to missing generated plot
-images or CSV files so ignored/generated artifact workflows fail with a clear
-diagnostic instead of an empty gallery.
+`scan` reports discovered architecture-standard CSV roots and draft status. It
+also surfaces curated PNG/SVG references from `results/final/figures/`, but it
+does not import arbitrary docs/build/test images. `validate` reports manifest
+references to missing generated plot images or CSV files so ignored/generated
+artifact workflows fail with a clear diagnostic instead of an empty gallery.
 
 ## CSV Plot Studio Workflow
 
@@ -74,9 +76,18 @@ analysis_project/
       scripts/
       plot_ready/
       cache/
-  out/
-    plots/
-    reports/
+  analyses/
+    study_id/
+      data/
+        input/
+        raw/
+        processed/
+      results/
+        runs/
+        final/
+          figures/
+          tables/
+          reports/
   config/
 ```
 
@@ -93,14 +104,18 @@ analysis_name/
   data/input/        # optional upstream inputs
   data/raw/          # raw outputs from scripts/models/functions
   data/processed/    # cleaned or analysis-ready tables
-  out/plots/         # generated PNG/SVG references, imported explicitly when needed
-  out/reports/       # optional generated reports/tables
+  results/runs/      # disposable diagnostics; ignored by MPLGallery defaults
+  results/final/figures/ # curated PNG/SVG references surfaced by default
+  results/final/tables/  # curated result CSVs drafted by default
+  results/final/reports/ # optional generated reports
   config/            # optional project configuration
 ```
 
-By default, `serve` uses CSV tables under the discovered data/output roots and
-does not scan arbitrary PNG/SVG files into the gallery. `out/plots` is treated as
-the conventional place to import reference artifacts with `import-artifacts`.
+By default, `serve` uses CSV tables under `data/` roots and
+`results/final/tables/` roots, and it shows PNG/SVG references only from
+`results/final/figures/`. Disposable `results/runs/` content is ignored. Legacy
+or non-standard figure folders can still be imported explicitly with
+`import-artifacts`.
 
 Initialize a CSV folder without rendering:
 
@@ -120,17 +135,38 @@ Drafting infers numeric columns, chooses a simple initial plot type, writes YAML
 recipes, and keeps generated artifacts under that folder's `.mplgallery/`
 workspace.
 
+## pandas And Matplotlib Responsibilities
+
+MPLGallery uses pandas where table-shaped CSV workflows are strongest:
+
+- load and sample CSV files;
+- infer quick draft plots from column types;
+- write plot-ready CSV copies under `.mplgallery/plot_ready/`;
+- generate reproducible render scripts that start from `DataFrame.plot(...)`.
+
+Matplotlib remains the editable figure contract:
+
+- UI metadata edits persist into `.mplgallery/manifest.yaml`;
+- cached rerenders apply the recipe metadata to a Matplotlib figure;
+- labels, units, scales, limits, legends, grid, figure size, colors, markers,
+  line styles, bar hatches, and opacity stay editable.
+
+Source CSVs are never mutated. Any light table prep is recipe metadata and may
+write derived CSVs only under `.mplgallery/plot_ready/`.
+
 ## Import Existing Images As References
 
 Existing PNG/SVG browsing is explicit reference mode:
 
 ```bash
-mplgallery import-artifacts /path/to/project/out/plots
+mplgallery import-artifacts /path/to/project/legacy/plots
 mplgallery scan /path/to/project --include-artifacts
 mplgallery serve /path/to/project --include-artifacts
 ```
 
-Imported images remain reference-only unless a CSV-backed recipe is added.
+Curated images in `results/final/figures/` are shown as reference-only records
+by default. Other imported images remain reference-only unless a CSV-backed
+recipe is added.
 
 ## Import Existing Plot Manifests
 
@@ -175,6 +211,8 @@ Axis units can use plain text or latex/mathtext strings such as
 
 ## Example Projects
 
+- `examples/architecture_project`: standard `analyses/<id>/data` and
+  `results/final/{figures,tables}` layout.
 - `examples/sample_project`: original browser-first sample with PNG and SVG.
 - `examples/generic_plots_project`: line and scatter examples.
 - `examples/distribution_plots_project`: bar and histogram examples.

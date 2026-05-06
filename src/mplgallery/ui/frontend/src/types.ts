@@ -56,6 +56,9 @@ export type PlotRecord = {
   name: string;
   kind: string;
   imagePath: string;
+  sourceDatasetId?: string | null;
+  ownedByMplgallery?: boolean;
+  visibilityRole?: "draft" | "reference" | "imported" | string;
   csvPath?: string | null;
   rawCsvPath?: string | null;
   confidence: string;
@@ -69,6 +72,20 @@ export type PlotRecord = {
   redraw: RedrawMetadata;
   series: SeriesStyle[];
   axisDefaults?: AxisDefaults;
+};
+
+export type DatasetRecord = {
+  id: string;
+  displayName: string;
+  path: string;
+  csvRootId: string;
+  csvRootPath: string;
+  draftStatus: string;
+  associatedPlotId?: string | null;
+  rowCountSampled: number;
+  columns: string[];
+  numericColumns: string[];
+  categoricalColumns: string[];
 };
 
 export type AxisDefaults = {
@@ -85,6 +102,7 @@ export type SelectOption = {
 export type BrowserPayload = {
   projectRoot: string;
   selectedPlotId?: string | null;
+  datasets: DatasetRecord[];
   records: PlotRecord[];
   options: {
     plotKinds: string[];
@@ -102,7 +120,10 @@ export type BrowserPayload = {
 
 export type ComponentEvent =
   | { id: string; type: "save_redraw_metadata"; plot_id: string; redraw: RedrawMetadata }
-  | { id: string; type: "request_rerender"; plot_id: string };
+  | { id: string; type: "request_rerender"; plot_id: string }
+  | { id: string; type: "select_dataset"; dataset_id: string }
+  | { id: string; type: "draft_dataset"; dataset_id: string }
+  | { id: string; type: "draft_checked_datasets"; dataset_ids: string[] };
 
 export type TreeNode = {
   path: string;
