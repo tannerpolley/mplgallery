@@ -6,7 +6,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -29,9 +29,68 @@ jobs:
       - name: Build wheel
         run: uv run --no-sync python -m build
 
-      - name: Create isolated smoke environment
+      - name: Fresh install CLI smoke test
+        shell: pwsh
         run: |
           python -m venv .wheel-smoke-venv
-          .wheel-smoke-venv/bin/pip install --upgrade pip
-          .wheel-smoke-venv/bin/pip install dist/*.whl
-          .wheel-smoke-venv/bin/python -m mplgallery scan examples/install_smoke_project
+          $venvPython = Join-Path $PWD ".wheel-smoke-venv\Scripts\python.exe"
+          $mplgallery = Join-Path $PWD ".wheel-smoke-venv\Scripts\mplgallery.exe"
+          & $venvPython -m pip install --upgrade pip
+          $wheel = (Get-ChildItem -Path dist -Filter *.whl | Select-Object -First 1).FullName
+          & $venvPython -m pip install $wheel
+
+          $external = Join-Path $env:RUNNER_TEMP "external-analysis"
+          $dataDir = Join-Path $external "data\processed"
+          New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+          @"
+          time,response,baseline
+          0,0.00,0.02
+          1,0.18,0.15
+          2,0.33,0.28
+          3,0.49,0.44
+          4,0.61,0.58
+          "@ | Set-Content -LiteralPath (Join-Path $dataDir "model_results.csv") -Encoding UTF8
+
+          Push-Location $external
+          try {
+            & $mplgallery run --help > (Join-Path $env:RUNNER_TEMP "mplgallery-run-help.txt")
+            & $mplgallery run --choose-root --help > (Join-Path $env:RUNNER_TEMP "mplgallery-run-choose-root-help.txt")
+            & $mplgallery draft data --json > draft.json
+            & $mplgallery scan . --json > scan.json
+            @'
+          import json
+          from pathlib import Path
+
+          draft = json.loads(Path("draft.json").read_text())
+          scan = json.loads(Path("scan.json").read_text())
+          assert draft["datasets"] == 1
+          assert draft["records"], draft
+          assert any("model_results.csv" in dataset["relative_path"] for dataset in scan["datasets"])
+          assert scan["plots_discovered"] >= 1
+          '@ | & $venvPython
+
+            $configHome = Join-Path $env:RUNNER_TEMP "mplgallery-config"
+            $job = Start-Job -ScriptBlock {
+              param($exe, $cwd, $config)
+              Set-Location $cwd
+              $env:MPLGALLERY_CONFIG_HOME = $config
+              & $exe run --port 8765
+            } -ArgumentList $mplgallery, $external, $configHome
+            try {
+              foreach ($attempt in 1..30) {
+                try {
+                  Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8765/" -OutFile (Join-Path $env:RUNNER_TEMP "mplgallery-home.html")
+                  exit 0
+                } catch {
+                  Start-Sleep -Seconds 1
+                }
+              }
+              Receive-Job $job
+              exit 1
+            } finally {
+              Stop-Job $job -ErrorAction SilentlyContinue
+              Remove-Job $job -Force -ErrorAction SilentlyContinue
+            }
+          } finally {
+            Pop-Location
+          }

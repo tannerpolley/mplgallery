@@ -243,6 +243,11 @@ def validate(project_root: Path = typer.Argument(Path("."), help="Project direct
 def serve(
     project_root: Path = typer.Argument(Path("."), help="Project directory to serve."),
     port: int | None = typer.Option(None, help="Streamlit server port."),
+    choose_root: bool = typer.Option(
+        False,
+        "--choose-root",
+        help="Open with the root chooser emphasized and use the last recent root when available.",
+    ),
     include_artifacts: bool = typer.Option(
         False,
         "--include-artifacts",
@@ -250,6 +255,49 @@ def serve(
     ),
 ) -> None:
     """Launch the local Streamlit CSV plot studio."""
+    raise typer.Exit(
+        _run_streamlit_app(
+            project_root,
+            port=port,
+            include_artifacts=include_artifacts,
+            choose_root=choose_root,
+        )
+    )
+
+
+@app.command("run")
+def run_app(
+    project_root: Path = typer.Argument(Path("."), help="Project directory to run from."),
+    port: int | None = typer.Option(None, help="Streamlit server port."),
+    choose_root: bool = typer.Option(
+        False,
+        "--choose-root",
+        help="Open with the root chooser emphasized and use the last recent root when available.",
+    ),
+    include_artifacts: bool = typer.Option(
+        False,
+        "--include-artifacts",
+        help="Also show explicitly imported/legacy PNG/SVG artifacts.",
+    ),
+) -> None:
+    """Launch the local Streamlit CSV plot studio."""
+    raise typer.Exit(
+        _run_streamlit_app(
+            project_root,
+            port=port,
+            include_artifacts=include_artifacts,
+            choose_root=choose_root,
+        )
+    )
+
+
+def _run_streamlit_app(
+    project_root: Path,
+    *,
+    port: int | None,
+    include_artifacts: bool,
+    choose_root: bool,
+) -> int:
     resolved_root = project_root.expanduser().resolve()
     app_path = Path(__file__).parent / "ui" / "app.py"
     command = [
@@ -264,9 +312,11 @@ def serve(
     if port is not None:
         command.append(f"--server.port={port}")
     command.extend(["--", "--project-root", str(resolved_root)])
+    if choose_root:
+        command.append("--choose-root")
     if include_artifacts:
         command.append("--include-artifacts")
-    raise typer.Exit(subprocess.run(command, check=False).returncode)
+    return subprocess.run(command, check=False).returncode
 
 
 def main() -> None:

@@ -21,6 +21,8 @@ from mplgallery.core.renderer import (
     PLOT_KIND_CHOICES,
 )
 from mplgallery.core.studio import draft_csv_dataset
+from mplgallery.core.user_settings import forget_recent_root, load_user_settings, save_user_settings
+from mplgallery.ui.root_state import change_active_root, reset_active_root
 
 
 LINESTYLE_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -71,10 +73,14 @@ class ComponentEvent(BaseModel):
         "select_dataset",
         "draft_dataset",
         "draft_checked_datasets",
+        "change_project_root",
+        "reset_project_root",
+        "forget_recent_root",
     ]
     plot_id: str | None = None
     dataset_id: str | None = None
     dataset_ids: list[str] = Field(default_factory=list)
+    root_path: str | None = None
     redraw: RedrawMetadata | None = None
 
 
@@ -103,9 +109,20 @@ def build_component_payload(
     selected_plot_id: str | None,
     datasets: list[DatasetRecord] | None = None,
     errors: dict[str, str] | None = None,
+    launch_root: Path | None = None,
+    recent_roots: tuple[Path, ...] = (),
+    root_error: str | None = None,
+    show_root_chooser: bool = False,
 ) -> dict[str, Any]:
     return {
         "projectRoot": str(project_root),
+        "rootContext": {
+            "activeRoot": str(project_root),
+            "launchRoot": str(launch_root or project_root),
+            "recentRoots": [str(root) for root in recent_roots],
+            "error": root_error,
+            "showRootChooser": show_root_chooser,
+        },
         "selectedPlotId": selected_plot_id,
         "datasets": [_dataset_payload(dataset) for dataset in datasets or []],
         "records": [_record_payload(record) for record in records],
@@ -131,12 +148,25 @@ def process_component_event(
     *,
     event: ComponentEvent | None,
     project_root: Path,
+    launch_root: Path | None = None,
 ) -> bool:
     """Apply a component event. Returns True when Streamlit should rerun."""
     if event is None or _event_was_processed(event.id):
         return False
 
     st.session_state["mplgallery_last_event_id"] = event.id
+    if event.type == "change_project_root":
+        _change_project_root(event.root_path or "")
+        return True
+
+    if event.type == "reset_project_root":
+        _reset_project_root(launch_root or project_root)
+        return True
+
+    if event.type == "forget_recent_root" and event.root_path:
+        _forget_recent_root(event.root_path)
+        return True
+
     if event.type == "save_redraw_metadata" and event.plot_id and event.redraw:
         try:
             record = _record_by_plot_id(st.session_state["mplgallery_records"], event.plot_id)
@@ -364,6 +394,47 @@ def _draft_datasets_by_id(project_root: Path, dataset_ids: list[str]) -> None:
             _clear_plot_error(dataset.associated_plot_id or dataset_id)
         except Exception as exc:
             _set_plot_error(dataset.associated_plot_id or dataset_id, str(exc))
+
+
+def _change_project_root(root_path: str) -> None:
+    result = change_active_root(root_path, load_user_settings())
+    if result.error:
+        st.session_state["mplgallery_root_error"] = result.error
+        return
+    if result.active_root is None:
+        return
+    save_user_settings(result.settings)
+    _set_active_project_root(result.active_root)
+
+
+def _reset_project_root(launch_root: Path) -> None:
+    result = reset_active_root(launch_root, load_user_settings())
+    if result.error:
+        st.session_state["mplgallery_root_error"] = result.error
+        return
+    if result.active_root is None:
+        return
+    save_user_settings(result.settings)
+    _set_active_project_root(result.active_root)
+
+
+def _forget_recent_root(root_path: str) -> None:
+    settings = forget_recent_root(load_user_settings(), Path(root_path))
+    save_user_settings(settings)
+
+
+def _set_active_project_root(project_root: Path) -> None:
+    st.session_state["mplgallery_active_project_root"] = str(project_root)
+    st.session_state.pop("mplgallery_root_error", None)
+    st.session_state.pop("mplgallery_selected_plot_id", None)
+    st.session_state.pop("mplgallery_component_errors", None)
+    st.session_state.pop("mplgallery_records", None)
+    st.session_state.pop("mplgallery_datasets", None)
+    try:
+        if "plot_id" in st.query_params:
+            del st.query_params["plot_id"]
+    except Exception:
+        pass
 
 
 def _manifest_root_for_record(project_root: Path, record: PlotRecord) -> Path:

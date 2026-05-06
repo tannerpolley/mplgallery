@@ -175,6 +175,27 @@ export function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+export function shortRootLabel(rootPath: string): string {
+  const normalized = rootPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (!normalized) return "No root";
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length <= 2) return normalized;
+  return `…/${parts.slice(-2).join("/")}`;
+}
+
+export function visibleRecentRoots(activeRoot: string, recentRoots: string[]): string[] {
+  const activeKey = rootKey(activeRoot);
+  const seen = new Set<string>();
+  const roots: string[] = [];
+  recentRoots.forEach((root) => {
+    const key = rootKey(root);
+    if (!key || key === activeKey || seen.has(key)) return;
+    seen.add(key);
+    roots.push(root);
+  });
+  return roots;
+}
+
 export function eventId(type: string): string {
   return `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
@@ -182,4 +203,8 @@ export function eventId(type: string): string {
 function emptyToUndefined(value: string | undefined): string | undefined {
   const trimmed = value?.trim() ?? "";
   return trimmed ? trimmed : undefined;
+}
+
+function rootKey(rootPath: string): string {
+  return rootPath.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }

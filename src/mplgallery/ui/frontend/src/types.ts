@@ -101,6 +101,7 @@ export type SelectOption = {
 
 export type BrowserPayload = {
   projectRoot: string;
+  rootContext?: RootContext;
   selectedPlotId?: string | null;
   datasets: DatasetRecord[];
   records: PlotRecord[];
@@ -123,7 +124,18 @@ export type ComponentEvent =
   | { id: string; type: "request_rerender"; plot_id: string }
   | { id: string; type: "select_dataset"; dataset_id: string }
   | { id: string; type: "draft_dataset"; dataset_id: string }
-  | { id: string; type: "draft_checked_datasets"; dataset_ids: string[] };
+  | { id: string; type: "draft_checked_datasets"; dataset_ids: string[] }
+  | { id: string; type: "change_project_root"; root_path: string }
+  | { id: string; type: "reset_project_root" }
+  | { id: string; type: "forget_recent_root"; root_path: string };
+
+export type RootContext = {
+  activeRoot: string;
+  launchRoot: string;
+  recentRoots: string[];
+  error?: string | null;
+  showRootChooser?: boolean;
+};
 
 export type TreeNode = {
   path: string;
