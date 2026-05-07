@@ -43,4 +43,6 @@ def test_console_script_and_run_command_expose_root_launcher() -> None:
     result = RUNNER.invoke(app, ["run", "--help"])
     assert result.exit_code == 0, result.output
     assert "Launch the local Streamlit CSV plot studio" in result.output
-    assert "--choose-root" in result.output
+
+    choose_root_result = RUNNER.invoke(app, ["run", "--choose-root", "--help"])
+    assert choose_root_result.exit_code == 0, choose_root_result.output

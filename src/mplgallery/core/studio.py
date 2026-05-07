@@ -129,7 +129,7 @@ def build_csv_studio_index(
     project_root: Path | str,
     *,
     ensure_drafts: bool = False,
-    include_artifacts: bool = False,
+    include_artifacts: bool = True,
     sample_rows: int = DEFAULT_SAMPLE_ROWS,
 ) -> CSVStudioIndex:
     """Build the CSV-first index used by the CLI and Streamlit host."""
@@ -155,6 +155,8 @@ def build_csv_studio_index(
         broad_artifacts = build_plot_records(scan, manifest=manifest)
         existing_paths = {record.image.path for record in records}
         for record in broad_artifacts:
+            if not _is_reference_artifact_path(record.image.relative_path):
+                continue
             if record.image.path not in existing_paths:
                 records.append(record)
                 imported_artifacts.append(record)
@@ -206,6 +208,8 @@ def draft_csv_dataset(
     csv_root: Path | str | None = None,
     project_root: Path | str | None = None,
     sample_rows: int = DEFAULT_SAMPLE_ROWS,
+    redraw: RedrawMetadata | None = None,
+    output_format: str = "svg",
 ) -> CSVStudioIndex:
     """Create or refresh a draft for one source CSV."""
     source = Path(csv_path).expanduser().resolve()
@@ -217,7 +221,16 @@ def draft_csv_dataset(
     project = Path(project_root).expanduser().resolve() if project_root is not None else root
     workspace = init_csv_root(root)
     manifest = load_manifest(root)
-    dataset, record = _draft_csv(source, root, project, workspace, manifest, sample_rows)
+    dataset, record = _draft_csv(
+        source,
+        root,
+        project,
+        workspace,
+        manifest,
+        sample_rows,
+        redraw_override=redraw,
+        output_format=output_format,
+    )
     save_manifest(root, manifest)
     records = [record] if record is not None else []
     return CSVStudioIndex(
@@ -320,6 +333,15 @@ def _architecture_result_figure_dirs(project_root: Path) -> list[Path]:
     return sorted(directories, key=lambda item: item.relative_to(project_root).as_posix().lower())
 
 
+def _is_reference_artifact_path(relative_path: Path) -> bool:
+    parts = tuple(part.lower() for part in relative_path.parts)
+    if "_build" in parts or "runs" in parts:
+        return False
+    if len(parts) >= 3 and parts[-3:-1] == ("results", "runs"):
+        return False
+    return True
+
+
 def _draft_csv(
     csv_path: Path,
     csv_root: Path,
@@ -327,6 +349,9 @@ def _draft_csv(
     workspace: CSVStudioWorkspace,
     manifest: ProjectManifest,
     sample_rows: int,
+    *,
+    redraw_override: RedrawMetadata | None = None,
+    output_format: str = "svg",
 ) -> tuple[DatasetRecord, PlotRecord | None]:
     frame = pd.read_csv(csv_path, nrows=sample_rows)
     dataset = _dataset_record(csv_path, project_root, csv_root, frame=frame)
@@ -355,8 +380,14 @@ def _draft_csv(
     plot_ready_path = workspace.plot_ready_dir / f"{slug}.csv"
     recipe_path = workspace.recipes_dir / f"{slug}.yaml"
     script_path = workspace.scripts_dir / f"render_{slug}.py"
-    cache_path = _draft_figure_path(csv_root, project_root, csv_path.relative_to(csv_root), slug)
-    redraw = draft.redraw
+    cache_path = _draft_figure_path(
+        csv_root,
+        project_root,
+        csv_path.relative_to(csv_root),
+        slug,
+        output_format=output_format,
+    )
+    redraw = redraw_override or draft.redraw
     plot_frame = draft.plot_frame
     plot_ready_path.parent.mkdir(parents=True, exist_ok=True)
     plot_frame.to_csv(plot_ready_path, index=False)
@@ -431,7 +462,7 @@ def _render_record(
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         fig.tight_layout()
-        fig.savefig(cache_path, format="svg")
+        fig.savefig(cache_path, format=cache_path.suffix.removeprefix(".") or "svg")
     finally:
         plt.close(fig)
 
@@ -474,8 +505,12 @@ def _non_mutating_dataset_records(csv_root: CSVRootRecord, project_root: Path) -
             if matched and matched.plot_csv_path
             else None
         )
+        try:
+            frame = pd.read_csv(csv_path, nrows=DEFAULT_SAMPLE_ROWS)
+        except Exception:
+            frame = None
         records.append(
-            _dataset_record(csv_path, project_root, csv_root.path).model_copy(
+            _dataset_record(csv_path, project_root, csv_root.path, frame=frame).model_copy(
                 update={
                     "draft_status": "drafted" if recipe_path.exists() else "not_initialized",
                     "recipe_path": recipe_path if recipe_path.exists() else None,
@@ -546,6 +581,8 @@ def _csvs_for_root(directory: Path) -> list[Path]:
         if not path.is_file():
             continue
         local_parts = {part.lower() for part in path.relative_to(directory).parts}
+        if "raw" in local_parts:
+            continue
         if ".mplgallery" in local_parts or "_build" in local_parts:
             continue
         if local_parts & (STUDIO_IGNORE_DIRS - CSV_ROOT_NAMES):
@@ -556,6 +593,8 @@ def _csvs_for_root(directory: Path) -> list[Path]:
 
 def _is_architecture_csv_root(directory: Path, project_root: Path) -> bool:
     if directory.name.lower() in CSV_ROOT_NAMES:
+        return True
+    if directory.name.lower() == "plots":
         return True
     return _path_has_suffix_parts(directory, project_root, RESULT_TABLE_PARTS)
 
@@ -623,14 +662,26 @@ def _dataset_id(relative_path: Path) -> str:
     return relative_path.with_suffix("").as_posix().replace("/", "__")
 
 
-def _draft_figure_path(csv_root: Path, project_root: Path, relative_csv_path: Path, slug: str) -> Path:
+def _draft_figure_path(
+    csv_root: Path,
+    project_root: Path,
+    relative_csv_path: Path,
+    slug: str,
+    *,
+    output_format: str = "svg",
+) -> Path:
     figures_dir = _draft_figures_dir(csv_root, project_root)
-    return figures_dir / f"{slug}.svg"
+    suffix = output_format.lower().lstrip(".")
+    if suffix not in {"svg", "png"}:
+        suffix = "svg"
+    return figures_dir / f"{slug}.{suffix}"
 
 
 def _draft_figures_dir(csv_root: Path, project_root: Path) -> Path:
     if _path_has_suffix_parts(csv_root, project_root, RESULT_TABLE_PARTS):
         return csv_root.parent / "figures" / "mplgallery"
+    if csv_root.name.lower() == "plots":
+        return csv_root / "mplgallery"
     if csv_root.name.lower() == "data":
         return csv_root.parent / "results" / "final" / "figures" / "mplgallery"
     return project_root / "results" / "final" / "figures" / "mplgallery"

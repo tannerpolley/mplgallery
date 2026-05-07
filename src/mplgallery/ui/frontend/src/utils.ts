@@ -1,4 +1,4 @@
-import type { PlotRecord, RedrawMetadata, SeriesStyle, SubplotMetadata, TreeNode } from "./types";
+import type { FileItem, PlotRecord, RedrawMetadata, SeriesStyle, SubplotMetadata, TreeNode } from "./types";
 
 export type GalleryStatus = {
   totalPlots: number;
@@ -58,10 +58,10 @@ export function foldersFor(record: PlotRecord): string[] {
   return folders;
 }
 
-export function buildTree(records: PlotRecord[]): TreeNode {
+export function buildTree(files: FileItem[], rootLabel: string): TreeNode {
   const folderCounts = new Map<string, number>();
-  records.forEach((record) => {
-    foldersFor(record).forEach((folder) => {
+  files.forEach((file) => {
+    foldersForFile(file).forEach((folder) => {
       folderCounts.set(folder, (folderCounts.get(folder) ?? 0) + 1);
     });
   });
@@ -73,14 +73,23 @@ export function buildTree(records: PlotRecord[]): TreeNode {
       .filter((folder) => !folder.slice(prefix.length).includes("/"))
       .sort()
       .map(makeNode);
-    return {
+    return compressNode({
       path,
-      label: path === "." ? "All plots" : (path.split("/").pop() ?? path),
+      label: path === "." ? rootLabel : (path.split("/").pop() ?? path),
       count: folderCounts.get(path) ?? 0,
       children,
-    };
+      files: files
+        .filter((file) => parentFolderForPath(file.path) === path)
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    });
   };
   return makeNode(".");
+}
+
+export function projectRootName(rootPath: string): string {
+  const normalized = rootPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.at(-1) ?? "Project root";
 }
 
 export function filterRecords(
@@ -104,6 +113,7 @@ export function normalizeRedraw(redraw: RedrawMetadata, series: SeriesStyle[]): 
   return {
     kind: redraw.kind ?? "line",
     x: redraw.x,
+    y: series.filter((style) => style.y.trim()).map((style) => style.y),
     title: emptyToUndefined(redraw.title),
     xlabel: emptyToUndefined(redraw.xlabel),
     xlabel_unit: emptyToUndefined(redraw.xlabel_unit),
@@ -181,6 +191,40 @@ export function shortRootLabel(rootPath: string): string {
   const parts = normalized.split("/").filter(Boolean);
   if (parts.length <= 2) return normalized;
   return `…/${parts.slice(-2).join("/")}`;
+}
+
+function foldersForFile(file: FileItem): string[] {
+  const parts = file.path.split("/");
+  const folders = ["."];
+  let current = "";
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    current = current ? `${current}/${parts[index]}` : parts[index];
+    folders.push(current);
+  }
+  return folders;
+}
+
+function compressNode(node: TreeNode): TreeNode {
+  if (node.path === ".") return node;
+  if (node.files.length > 0 || node.children.length !== 1) return node;
+  const child = node.children[0];
+  if (child.files.length === 0 && child.children.length === 1) {
+    const compressed = compressNode(child);
+    return {
+      ...compressed,
+      label: `${node.label}/${compressed.label}`,
+    };
+  }
+  return {
+    ...child,
+    label: `${node.label}/${child.label}`,
+  };
+}
+
+function parentFolderForPath(path: string): string {
+  const parts = path.split("/");
+  if (parts.length <= 1) return ".";
+  return parts.slice(0, -1).join("/");
 }
 
 export function visibleRecentRoots(activeRoot: string, recentRoots: string[]): string[] {

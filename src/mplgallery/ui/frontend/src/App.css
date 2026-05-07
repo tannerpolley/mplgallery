@@ -238,6 +238,11 @@ summary:focus-visible {
   font-size: 12px;
 }
 
+.mg-tree-file {
+  min-height: 22px;
+  font-size: 12px;
+}
+
 .mg-tree-twisty {
   display: inline-grid;
   place-items: center;
@@ -262,17 +267,46 @@ summary:focus-visible {
   accent-color: var(--mg-accent);
 }
 
+.mg-tree-check-spacer {
+  flex: 0 0 auto;
+  width: 17px;
+}
+
 .mg-tree-label {
   display: flex;
   flex: 1;
   align-items: center;
-  justify-content: space-between;
+  gap: 5px;
   min-width: 0;
   border: 0;
   background: transparent;
   color: var(--mg-ink);
   padding: 3px 5px;
   text-align: left;
+}
+
+.mg-tree-label .mg-count {
+  margin-left: auto;
+}
+
+.mg-file-icon {
+  flex: 0 0 auto;
+  color: #5c6878;
+}
+
+.mg-tree-csv .mg-file-icon {
+  color: #2f7a50;
+}
+
+.mg-tree-image .mg-file-icon {
+  color: var(--mg-accent);
+}
+
+.mg-file-status {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--mg-good);
 }
 
 .mg-tree-name {
@@ -300,6 +334,16 @@ summary:focus-visible {
   overflow: hidden;
 }
 
+.mg-workspace-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.mg-workspace-body.has-drawer {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+}
+
 .mg-workspace-header,
 .mg-gallery-toolbar {
   display: flex;
@@ -312,6 +356,13 @@ summary:focus-visible {
 
 .mg-workspace-header > div:first-child {
   min-width: 0;
+}
+
+.mg-workspace-heading {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  justify-items: start;
 }
 
 .mg-workspace-title {
@@ -415,7 +466,7 @@ summary:focus-visible {
   position: absolute;
   z-index: 30;
   top: calc(100% + 6px);
-  right: 0;
+  left: 0;
   width: min(460px, calc(100vw - 42px));
   border: 1px solid var(--mg-line);
   border-radius: 10px;
@@ -570,6 +621,72 @@ summary:focus-visible {
   overflow: auto;
 }
 
+.mg-csv-drawer {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+  border-left: 1px solid var(--mg-line);
+  background: #fff;
+  padding: 10px;
+}
+
+.mg-csv-drawer-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mg-csv-drawer-head h2 {
+  margin: 2px 0;
+  font-size: 15px;
+}
+
+.mg-csv-drawer-head p {
+  margin: 0;
+  color: var(--mg-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.mg-csv-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--mg-line);
+  border-radius: 8px;
+}
+
+.mg-csv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: #fff;
+}
+
+.mg-csv-table th,
+.mg-csv-table td {
+  border-bottom: 1px solid #e7ecf3;
+  border-right: 1px solid #eef2f7;
+  padding: 4px 6px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mg-csv-table th:last-child,
+.mg-csv-table td:last-child {
+  border-right: 0;
+}
+
+.mg-csv-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f5f8fb;
+  color: #2f3948;
+  font-weight: 700;
+}
+
 .mg-gallery-toolbar {
   padding-block: 9px;
   background: #fff;
@@ -599,11 +716,70 @@ input[type="checkbox"] {
   padding: 12px;
 }
 
+.mg-csv-detail {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 220px;
+  margin: 12px;
+  padding: 14px;
+  border: 1px solid var(--mg-line);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.mg-csv-detail h2 {
+  margin: 2px 0;
+  font-size: 16px;
+}
+
+.mg-csv-detail p {
+  margin: 0;
+  color: var(--mg-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .mg-card {
   overflow: hidden;
   border: 1px solid var(--mg-line);
   border-radius: 9px;
   background: #fff;
+}
+
+.mg-csv-card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.mg-csv-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: clamp(130px, calc(var(--tile-size) * 0.58), 72vh);
+  border: 0;
+  border-bottom: 1px solid var(--mg-line);
+  background: linear-gradient(180deg, #fcfdfd, #f4f7fb);
+  padding: 12px;
+  text-align: left;
+}
+
+.mg-csv-card-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #b9d3c2;
+  border-radius: 8px;
+  color: #2f7a50;
+  background: #f1f8f3;
+}
+
+.mg-csv-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .mg-card.is-selected {
@@ -1167,6 +1343,61 @@ input[type="checkbox"] {
   box-shadow: 0 20px 70px rgba(23, 32, 47, 0.24);
 }
 
+.mg-modal-card.is-compact {
+  width: min(620px, calc(100vw - 28px));
+  align-self: start;
+  grid-template-rows: auto auto auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.mg-draft-form {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 0 16px 12px;
+}
+
+.mg-draft-form label {
+  display: grid;
+  gap: 4px;
+  color: var(--mg-muted);
+  font-size: 11px;
+}
+
+.mg-draft-form input,
+.mg-draft-form select {
+  width: 100%;
+  height: 34px;
+  min-height: 32px;
+  border: 1px solid var(--mg-line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--mg-ink);
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.mg-draft-form .mg-mini-toggle {
+  display: inline-flex !important;
+  width: fit-content;
+  min-height: 26px;
+}
+
+.mg-draft-form .mg-mini-toggle input {
+  width: 12px;
+  height: 12px;
+  min-height: 12px;
+  padding: 0;
+}
+
+.mg-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
 .mg-modal-head {
   grid-column: 1 / -1;
   display: flex;
@@ -1235,6 +1466,30 @@ input[type="checkbox"] {
 
   .mg-workspace {
     grid-template-rows: auto minmax(320px, auto);
+  }
+
+  .mg-workspace-body.has-drawer {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(320px, auto) auto;
+  }
+
+  .mg-csv-drawer {
+    border-left: 0;
+    border-top: 1px solid var(--mg-line);
+  }
+
+  .mg-workspace-header,
+  .mg-gallery-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mg-header-actions {
+    justify-content: flex-start;
+  }
+
+  .mg-root-menu summary {
+    max-width: 100%;
   }
 
   .mg-canvas img {

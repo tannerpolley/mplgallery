@@ -22,7 +22,7 @@ from mplgallery.core.renderer import (
 )
 from mplgallery.core.studio import draft_csv_dataset
 from mplgallery.core.user_settings import forget_recent_root, load_user_settings, save_user_settings
-from mplgallery.ui.root_state import change_active_root, reset_active_root
+from mplgallery.ui.root_state import browse_active_root, change_active_root, reset_active_root
 
 
 LINESTYLE_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -72,7 +72,9 @@ class ComponentEvent(BaseModel):
         "request_rerender",
         "select_dataset",
         "draft_dataset",
+        "draft_dataset_with_preferences",
         "draft_checked_datasets",
+        "browse_project_root",
         "change_project_root",
         "reset_project_root",
         "forget_recent_root",
@@ -82,6 +84,7 @@ class ComponentEvent(BaseModel):
     dataset_ids: list[str] = Field(default_factory=list)
     root_path: str | None = None
     redraw: RedrawMetadata | None = None
+    output_format: str | None = None
 
 
 class ComponentResult(BaseModel):
@@ -126,6 +129,7 @@ def build_component_payload(
         "selectedPlotId": selected_plot_id,
         "datasets": [_dataset_payload(dataset) for dataset in datasets or []],
         "records": [_record_payload(record) for record in records],
+        "files": _file_item_payloads(project_root, records, datasets or []),
         "options": {
             "plotKinds": list(PLOT_KIND_CHOICES),
             "lineStyles": [{"value": value, "label": label} for value, label in LINESTYLE_OPTIONS],
@@ -163,6 +167,10 @@ def process_component_event(
         _reset_project_root(launch_root or project_root)
         return True
 
+    if event.type == "browse_project_root":
+        _browse_project_root(project_root)
+        return True
+
     if event.type == "forget_recent_root" and event.root_path:
         _forget_recent_root(event.root_path)
         return True
@@ -192,6 +200,15 @@ def process_component_event(
 
     if event.type == "draft_dataset" and event.dataset_id:
         _draft_datasets_by_id(project_root, [event.dataset_id])
+        return True
+
+    if event.type == "draft_dataset_with_preferences" and event.dataset_id and event.redraw:
+        _draft_datasets_by_id(
+            project_root,
+            [event.dataset_id],
+            redraw=event.redraw,
+            output_format=event.output_format or "svg",
+        )
         return True
 
     if event.type == "draft_checked_datasets" and event.dataset_ids:
@@ -253,6 +270,7 @@ def _record_payload(record: PlotRecord) -> dict[str, Any]:
 
 
 def _dataset_payload(dataset: DatasetRecord) -> dict[str, Any]:
+    preview_columns, preview_rows, preview_truncated, preview_error = _dataset_preview(dataset)
     return {
         "id": dataset.dataset_id,
         "displayName": dataset.display_name,
@@ -265,7 +283,95 @@ def _dataset_payload(dataset: DatasetRecord) -> dict[str, Any]:
         "columns": dataset.columns,
         "numericColumns": dataset.numeric_columns,
         "categoricalColumns": dataset.categorical_columns,
+        "previewColumns": preview_columns,
+        "previewRows": preview_rows,
+        "previewTruncated": preview_truncated,
+        "previewError": preview_error,
     }
+
+
+def _dataset_preview(
+    dataset: DatasetRecord,
+    *,
+    limit: int = 200,
+) -> tuple[list[str], list[dict[str, Any]], bool, str | None]:
+    try:
+        frame = pd.read_csv(dataset.path, nrows=limit + 1)
+    except Exception as exc:
+        return [], [], False, str(exc)
+    columns = [str(column) for column in frame.columns]
+    truncated = len(frame) > limit
+    if truncated:
+        frame = frame.iloc[:limit]
+    rows: list[dict[str, Any]] = []
+    for row in frame.to_dict(orient="records"):
+        serialized = {str(key): _preview_value(value) for key, value in row.items()}
+        rows.append(serialized)
+    return columns, rows, truncated, None
+
+
+def _preview_value(value: Any) -> str | int | float | bool | None:
+    if pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        try:
+            value = value.item()
+        except Exception:
+            pass
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _file_item_payloads(
+    project_root: Path,
+    records: list[PlotRecord],
+    datasets: list[DatasetRecord],
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for dataset in datasets:
+        relative = dataset.relative_path.as_posix()
+        items.append(
+            {
+                "id": f"csv:{dataset.dataset_id}",
+                "kind": "csv",
+                "path": relative,
+                "name": dataset.relative_path.name,
+                "parentPath": dataset.relative_path.parent.as_posix()
+                if dataset.relative_path.parent != Path(".")
+                else ".",
+                "iconKind": "csv-drafted" if dataset.associated_plot_id else "csv",
+                "draftStatus": dataset.draft_status,
+                "plotId": dataset.associated_plot_id,
+                "datasetId": dataset.dataset_id,
+            }
+        )
+    for record in records:
+        relative = record.image.relative_path.as_posix()
+        items.append(
+            {
+                "id": f"plot:{record.plot_id}",
+                "kind": "image",
+                "path": relative,
+                "name": record.image.relative_path.name,
+                "parentPath": record.image.relative_path.parent.as_posix()
+                if record.image.relative_path.parent != Path(".")
+                else ".",
+                "iconKind": "image",
+                "suffix": record.image.suffix.lower(),
+                "visibilityRole": record.visibility_role,
+                "plotId": record.plot_id,
+                "datasetId": record.source_dataset_id,
+            }
+        )
+    return sorted(
+        items,
+        key=lambda item: (
+            str(item["path"]).lower(),
+            0 if item["kind"] == "image" else 1,
+            str(item["id"]),
+        ),
+    )
 
 
 def _image_data_uri(path: Path) -> str:
@@ -385,12 +491,24 @@ def _dataset_by_id(datasets: list[DatasetRecord], dataset_id: str) -> DatasetRec
     return next(dataset for dataset in datasets if dataset.dataset_id == dataset_id)
 
 
-def _draft_datasets_by_id(project_root: Path, dataset_ids: list[str]) -> None:
+def _draft_datasets_by_id(
+    project_root: Path,
+    dataset_ids: list[str],
+    *,
+    redraw: RedrawMetadata | None = None,
+    output_format: str = "svg",
+) -> None:
     datasets = st.session_state.get("mplgallery_datasets", [])
     for dataset_id in dataset_ids:
         try:
             dataset = _dataset_by_id(datasets, dataset_id)
-            draft_csv_dataset(dataset.path, csv_root=dataset.csv_root, project_root=project_root)
+            draft_csv_dataset(
+                dataset.path,
+                csv_root=dataset.csv_root,
+                project_root=project_root,
+                redraw=redraw,
+                output_format=output_format,
+            )
             _clear_plot_error(dataset.associated_plot_id or dataset_id)
         except Exception as exc:
             _set_plot_error(dataset.associated_plot_id or dataset_id, str(exc))
@@ -409,6 +527,17 @@ def _change_project_root(root_path: str) -> None:
 
 def _reset_project_root(launch_root: Path) -> None:
     result = reset_active_root(launch_root, load_user_settings())
+    if result.error:
+        st.session_state["mplgallery_root_error"] = result.error
+        return
+    if result.active_root is None:
+        return
+    save_user_settings(result.settings)
+    _set_active_project_root(result.active_root)
+
+
+def _browse_project_root(project_root: Path) -> None:
+    result = browse_active_root(load_user_settings(), project_root)
     if result.error:
         st.session_state["mplgallery_root_error"] = result.error
         return

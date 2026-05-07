@@ -67,7 +67,6 @@ def test_csv_root_discovery_prefers_named_output_folders_and_ignores_noise(tmp_p
     assert [dataset.relative_path.as_posix() for dataset in roots[0].datasets] == [
         "analyses/material_fit/data/input/feed.csv",
         "analyses/material_fit/data/processed/processed_results.csv",
-        "analyses/material_fit/data/raw/raw_results.csv",
     ]
     assert [dataset.relative_path.as_posix() for dataset in roots[1].datasets] == [
         "analyses/material_fit/results/final/tables/summary.csv"
@@ -163,6 +162,19 @@ def test_draft_generation_for_analysis_data_writes_to_analysis_result_figures(tm
     assert not any(".mplgallery/cache" in record.image.relative_path.as_posix() for record in result.records)
 
 
+def test_plots_folder_csvs_are_drafted_near_reference_artifacts(tmp_path: Path) -> None:
+    write(tmp_path / "plots" / "line_reference.svg", "<svg></svg>")
+    csv = write(tmp_path / "plots" / "line.csv", "x,y\n0,1\n1,2\n")
+
+    roots = find_csv_roots(tmp_path)
+    result = draft_csv_root(csv.parent, project_root=tmp_path)
+
+    assert [root.relative_path.as_posix() for root in roots] == ["plots"]
+    assert [record.image.relative_path.as_posix() for record in result.records] == [
+        "plots/mplgallery/line.svg"
+    ]
+
+
 def test_csv_studio_index_links_existing_drafts_without_exposing_cache(tmp_path: Path) -> None:
     csv_root = tmp_path / "analyses" / "study" / "data"
     write(csv_root / "processed" / "response.csv", "time,response\n0,1\n1,2\n")
@@ -210,9 +222,110 @@ def test_component_payload_includes_dataset_and_owned_plot_metadata(tmp_path: Pa
     assert payload["selectedPlotId"] is None
     assert payload["datasets"][0]["id"] == "data__response"
     assert payload["datasets"][0]["associatedPlotId"] == index.records[0].plot_id
+    assert payload["datasets"][0]["previewColumns"] == ["time", "response"]
+    assert payload["datasets"][0]["previewRows"][0] == {"time": 0, "response": 1}
+    assert payload["datasets"][0]["previewTruncated"] is False
+    assert payload["datasets"][0]["previewError"] is None
     assert payload["records"][0]["sourceDatasetId"] == "data__response"
     assert payload["records"][0]["ownedByMplgallery"] is True
     assert payload["records"][0]["visibilityRole"] == "draft"
+
+
+def test_component_payload_limits_dataset_preview_rows_and_reports_truncation(tmp_path: Path) -> None:
+    csv_root = tmp_path / "data"
+    rows = "\n".join(f"{index},{index * 2}" for index in range(260))
+    write(csv_root / "response.csv", f"time,response\n{rows}\n")
+
+    index = build_csv_studio_index(tmp_path, ensure_drafts=False)
+    payload = build_component_payload(
+        project_root=tmp_path,
+        records=index.records,
+        datasets=index.datasets,
+        selected_plot_id=None,
+        errors={},
+    )
+    dataset = payload["datasets"][0]
+
+    assert len(dataset["previewRows"]) == 200
+    assert dataset["previewTruncated"] is True
+    assert dataset["previewError"] is None
+
+
+def test_component_payload_preview_error_does_not_break_payload(tmp_path: Path, monkeypatch) -> None:
+    csv_root = tmp_path / "data"
+    write(csv_root / "response.csv", "time,response\n0,1\n")
+    index = build_csv_studio_index(tmp_path, ensure_drafts=False)
+
+    def raise_preview_error(*args, **kwargs):
+        raise ValueError("preview failure")
+
+    monkeypatch.setattr("mplgallery.ui.component.pd.read_csv", raise_preview_error)
+    payload = build_component_payload(
+        project_root=tmp_path,
+        records=index.records,
+        datasets=index.datasets,
+        selected_plot_id=None,
+        errors={},
+    )
+    dataset = payload["datasets"][0]
+
+    assert dataset["previewColumns"] == []
+    assert dataset["previewRows"] == []
+    assert dataset["previewTruncated"] is False
+    assert dataset["previewError"] == "preview failure"
+
+
+def test_component_payload_exposes_unified_file_items_without_raw_csvs(tmp_path: Path) -> None:
+    write(tmp_path / "data" / "raw" / "model_output.csv", "x,y\n0,1\n")
+    write(tmp_path / "data" / "processed" / "response.csv", "time,response\n0,1\n1,2\n")
+    write(tmp_path / "plots" / "legacy.svg", "<svg></svg>")
+
+    index = build_csv_studio_index(tmp_path)
+    payload = build_component_payload(
+        project_root=tmp_path,
+        records=index.records,
+        datasets=index.datasets,
+        selected_plot_id=None,
+        errors={},
+    )
+
+    paths = [item["path"] for item in payload["files"]]
+    assert "data/processed/response.csv" in paths
+    assert "plots/legacy.svg" in paths
+    assert "data/raw/model_output.csv" not in paths
+    assert {item["kind"] for item in payload["files"]} == {"csv", "image"}
+    assert any(item["datasetId"] == "data__processed__response" for item in payload["files"])
+
+
+def test_draft_dataset_accepts_supplied_redraw_metadata(tmp_path: Path) -> None:
+    from mplgallery.core.models import RedrawMetadata
+    from mplgallery.core.studio import draft_csv_dataset
+
+    source = write(tmp_path / "data" / "processed" / "response.csv", "time,response\n0,1\n1,2\n")
+    redraw = RedrawMetadata(
+        kind="scatter",
+        x="time",
+        y=["response"],
+        title="Custom response",
+        xlabel="Elapsed",
+        ylabel="Signal",
+        series=[SeriesStyle(y="response", color="#d62728", marker="x")],
+    )
+
+    result = draft_csv_dataset(
+        source,
+        csv_root=tmp_path / "data",
+        project_root=tmp_path,
+        redraw=redraw,
+        output_format="png",
+    )
+
+    record = result.records[0]
+    assert record.redraw is not None
+    assert record.redraw.kind == "scatter"
+    assert record.redraw.title == "Custom response"
+    assert record.redraw.series[0].marker == "x"
+    assert record.image.relative_path.suffix == ".png"
 
 
 def test_generated_pandas_render_script_can_render_cache_from_plot_ready_csv(tmp_path: Path) -> None:
@@ -305,7 +418,7 @@ def test_large_csv_draft_samples_plot_ready_output(tmp_path: Path) -> None:
     assert len(plot_ready.path.read_text(encoding="utf-8").splitlines()) == 5001
 
 
-def test_default_csv_studio_index_does_not_import_png_or_svg(tmp_path: Path) -> None:
+def test_default_csv_studio_index_includes_png_svg_references(tmp_path: Path) -> None:
     write(tmp_path / "data" / "table.csv", "x,y\n0,1\n")
     write(tmp_path / "data" / "legacy.png", "not-real-image")
     write(tmp_path / "data" / "legacy.svg", "<svg></svg>")
@@ -313,8 +426,10 @@ def test_default_csv_studio_index_does_not_import_png_or_svg(tmp_path: Path) -> 
     index = build_csv_studio_index(tmp_path, ensure_drafts=False)
 
     assert len(index.csv_roots) == 1
-    assert index.imported_artifacts == []
-    assert all(record.image.suffix == ".svg" for record in index.records)
+    assert [record.image.relative_path.as_posix() for record in index.records] == [
+        "data/legacy.png",
+        "data/legacy.svg",
+    ]
 
 
 def test_artifact_import_is_opt_in_and_reference_only(tmp_path: Path) -> None:
@@ -340,7 +455,9 @@ def test_analysis_layout_imports_out_plots_references_explicitly(tmp_path: Path)
 
     default_index = build_csv_studio_index(tmp_path, ensure_drafts=False)
     assert [root.relative_path.as_posix() for root in default_index.csv_roots] == ["data"]
-    assert default_index.imported_artifacts == []
+    assert [record.image.relative_path.as_posix() for record in default_index.imported_artifacts] == [
+        "out/plots/figure.svg"
+    ]
 
     import_result = import_artifact_references(tmp_path / "out" / "plots")
     assert import_result.imported_count == 1
@@ -367,5 +484,5 @@ def test_scan_cli_json_reports_csv_studio_roots_without_default_artifact_records
 
     assert payload["mode"] == "csv-studio"
     assert [root["relative_path"] for root in payload["csv_roots"]] == ["data"]
-    assert payload["plots_discovered"] == 0
-    assert payload["artifact_records"] == 0
+    assert payload["plots_discovered"] == 1
+    assert payload["artifact_records"] == 1

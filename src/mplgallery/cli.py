@@ -24,9 +24,9 @@ def scan(
     project_root: Path = typer.Argument(Path("."), help="Project directory to scan."),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
     include_artifacts: bool = typer.Option(
-        False,
-        "--include-artifacts",
-        help="Also include legacy PNG/SVG artifact-browser records.",
+        True,
+        "--include-artifacts/--csv-only",
+        help="Include PNG/SVG artifact-browser records alongside draftable CSV files.",
     ),
 ) -> None:
     """Scan a project for CSV roots and MPLGallery draft plot state."""
@@ -249,9 +249,9 @@ def serve(
         help="Open with the root chooser emphasized and use the last recent root when available.",
     ),
     include_artifacts: bool = typer.Option(
-        False,
-        "--include-artifacts",
-        help="Also show explicitly imported/legacy PNG/SVG artifacts.",
+        True,
+        "--include-artifacts/--csv-only",
+        help="Show PNG/SVG artifacts alongside draftable CSV files.",
     ),
 ) -> None:
     """Launch the local Streamlit CSV plot studio."""
@@ -275,9 +275,9 @@ def run_app(
         help="Open with the root chooser emphasized and use the last recent root when available.",
     ),
     include_artifacts: bool = typer.Option(
-        False,
-        "--include-artifacts",
-        help="Also show explicitly imported/legacy PNG/SVG artifacts.",
+        True,
+        "--include-artifacts/--csv-only",
+        help="Show PNG/SVG artifacts alongside draftable CSV files.",
     ),
 ) -> None:
     """Launch the local Streamlit CSV plot studio."""

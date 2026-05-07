@@ -12,7 +12,7 @@ import {
   shortRootLabel,
   visibleRecentRoots,
 } from "./utils";
-import type { PlotRecord } from "./types";
+import type { FileItem, PlotRecord } from "./types";
 
 const records: PlotRecord[] = [
   {
@@ -43,11 +43,35 @@ const records: PlotRecord[] = [
   },
 ];
 
+const files: FileItem[] = [
+  {
+    id: "csv:data__processed__alpha",
+    kind: "csv",
+    path: "data/processed/alpha.csv",
+    name: "alpha.csv",
+    parentPath: "data/processed",
+    iconKind: "csv",
+    datasetId: "data__processed__alpha",
+    draftStatus: "not_initialized",
+  },
+  {
+    id: "plot:plots__alpha",
+    kind: "image",
+    path: "plots/alpha.png",
+    name: "alpha.png",
+    parentPath: "plots",
+    iconKind: "image",
+    plotId: "plots__alpha",
+  },
+];
+
 describe("component utilities", () => {
-  it("builds a folder tree from plot paths", () => {
-    const tree = buildTree(records);
+  it("builds and compresses a unified file tree from file paths", () => {
+    const tree = buildTree(files, "mplgallery");
     expect(tree.count).toBe(2);
-    expect(tree.children.map((child) => child.path)).toEqual(["nested", "plots"]);
+    expect(tree.label).toBe("mplgallery");
+    expect(tree.children.map((child) => child.label)).toEqual(["data/processed", "plots"]);
+    expect(tree.children[0].files.map((item) => item.name)).toEqual(["alpha.csv"]);
   });
 
   it("filters by checked plot ids and search text", () => {
