@@ -129,7 +129,7 @@ def _render_host_chrome(*, project_root: Path, launch_root: Path, settings) -> b
         """,
         unsafe_allow_html=True,
     )
-    title_root_col, action_col = st.columns([9, 2], vertical_alignment="center")
+    title_root_col, action_col, _spacer_col = st.columns([5.8, 1.3, 4.9], vertical_alignment="center")
     with title_root_col:
         st.markdown(
             f"""
