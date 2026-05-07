@@ -64,3 +64,37 @@ def reset_active_root(launch_root: Path, settings: UserSettings) -> RootChangeRe
         active_root=launch.resolve(),
         settings=remember_recent_root(settings, launch),
     )
+
+
+def browse_active_root(settings: UserSettings, initial_root: Path | None = None) -> RootChangeResult:
+    selected = _pick_directory(initial_root)
+    if selected is None:
+        return RootChangeResult(
+            active_root=None,
+            settings=settings,
+            error="Folder selection was cancelled or is not available in this environment.",
+        )
+    return change_active_root(str(selected), settings)
+
+
+def _pick_directory(initial_root: Path | None) -> Path | None:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception:
+        return None
+
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(
+            initialdir=str(initial_root) if initial_root and initial_root.exists() else None,
+            title="Choose MPLGallery project root",
+        )
+        root.destroy()
+    except Exception:
+        return None
+    if not selected:
+        return None
+    return Path(selected)

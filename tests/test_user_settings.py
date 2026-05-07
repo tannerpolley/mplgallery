@@ -170,3 +170,25 @@ def test_component_root_event_rejects_missing_root_without_switching(
     assert changed is True
     assert st.session_state["mplgallery_active_project_root"] == str(launch_root)
     assert "does not exist" in st.session_state["mplgallery_root_error"]
+
+
+def test_component_browse_root_event_reports_picker_unavailable(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("MPLGALLERY_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.setattr("mplgallery.ui.root_state._pick_directory", lambda initial_root: None)
+    launch_root = tmp_path / "launch-root"
+    launch_root.mkdir()
+    st.session_state.clear()
+    st.session_state["mplgallery_active_project_root"] = str(launch_root)
+
+    changed = process_component_event(
+        event=ComponentEvent(id="browse-root-1", type="browse_project_root"),
+        project_root=launch_root,
+        launch_root=launch_root,
+    )
+
+    assert changed is True
+    assert st.session_state["mplgallery_active_project_root"] == str(launch_root)
+    assert "Folder selection was cancelled" in st.session_state["mplgallery_root_error"]

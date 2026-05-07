@@ -3,14 +3,24 @@ import {
   useMemo,
   useState,
   type CSSProperties,
-  type FormEvent as ReactFormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  FileImage,
+  Folder,
+  FolderOpen,
+  Menu,
+  Table2,
+} from "lucide-react";
 import { Streamlit } from "streamlit-component-lib";
 import type {
   BrowserPayload,
   DatasetRecord,
+  FileItem,
   PlotRecord,
   RedrawMetadata,
   SeriesStyle,
@@ -23,14 +33,11 @@ import {
   emptyGalleryMessage,
   eventId,
   filterRecords,
-  foldersFor,
   galleryStatus,
   normalizeRedraw,
   parseLimits,
-  plotIdSet,
+  projectRootName,
   reconcileCheckedPlotIds,
-  shortRootLabel,
-  visibleRecentRoots,
 } from "./utils";
 import "./App.css";
 
@@ -50,6 +57,7 @@ const emptyPayload: BrowserPayload = {
   selectedPlotId: null,
   datasets: [],
   records: [],
+  files: [],
   options: {
     plotKinds: ["line", "scatter", "bar", "barh", "area", "hist", "step"],
     lineStyles: [],
@@ -85,6 +93,7 @@ function App(props: StreamlitProps) {
   const [selectedPlotId, setSelectedPlotId] = useState<string | null>(payload.selectedPlotId ?? null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState(".");
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [checkedPlotIds, setCheckedPlotIds] = useState<Set<string>>(() => new Set());
   const [checkedDatasetIds, setCheckedDatasetIds] = useState<Set<string>>(() => new Set());
   const [hasUserFilter, setHasUserFilter] = useState(false);
@@ -94,17 +103,15 @@ function App(props: StreamlitProps) {
   const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useState(defaultLayout);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
-  const [rootDraft, setRootDraft] = useState(rootContext.activeRoot);
-  const [rootMenuOpen, setRootMenuOpen] = useState(Boolean(rootContext.showRootChooser));
+  const [draftPreferencesDatasetId, setDraftPreferencesDatasetId] = useState<string | null>(null);
 
   useEffect(() => {
     setSelectedPlotId(payload.selectedPlotId ?? null);
   }, [payload.selectedPlotId]);
 
   useEffect(() => {
-    setRootDraft(rootContext.activeRoot);
-    setRootMenuOpen(Boolean(rootContext.showRootChooser));
     setSelectedDatasetId(null);
+    setSelectedFileId(null);
     setSelectedPlotId(payload.selectedPlotId ?? null);
     setCheckedPlotIds(new Set());
     setCheckedDatasetIds(new Set());
@@ -117,22 +124,40 @@ function App(props: StreamlitProps) {
     setCheckedPlotIds((current) => reconcileCheckedPlotIds(payload.records, current, hasUserFilter));
   }, [payload.records, hasUserFilter]);
 
-  const referenceRecords = useMemo(
-    () => payload.records.filter((record) => record.visibilityRole !== "draft"),
-    [payload.records],
+  useEffect(() => {
+    setCheckedDatasetIds((current) => {
+      if (!hasUserFilter) return new Set();
+      const validIds = new Set(payload.datasets.map((dataset) => dataset.id));
+      return new Set([...current].filter((datasetId) => validIds.has(datasetId)));
+    });
+  }, [payload.datasets, hasUserFilter]);
+
+  const tree = useMemo(
+    () => buildTree(payload.files, projectRootName(rootContext.activeRoot)),
+    [payload.files, rootContext.activeRoot],
   );
-  const tree = useMemo(() => buildTree(referenceRecords), [referenceRecords]);
   const effectiveCheckedPlotIds = useMemo(
     () => checkedPlotIds,
     [checkedPlotIds],
   );
   const selectedDataset = payload.datasets.find((dataset) => dataset.id === selectedDatasetId) ?? null;
-  const selectedDatasetRecord = selectedDataset?.associatedPlotId
-    ? payload.records.find((record) => record.id === selectedDataset.associatedPlotId) ?? null
+  const draftPreferencesDataset = payload.datasets.find((dataset) => dataset.id === draftPreferencesDatasetId) ?? null;
+  const checkedCsvCards = useMemo(
+    () =>
+      payload.datasets.filter((dataset) => {
+        if (!checkedDatasetIds.has(dataset.id)) return false;
+        if (!query.trim()) return true;
+        const haystack = [dataset.displayName, dataset.path, dataset.csvRootPath].join(" ").toLowerCase();
+        return haystack.includes(query.trim().toLowerCase());
+      }),
+    [payload.datasets, checkedDatasetIds, query],
+  );
+  const selectedPlotRecord = selectedPlotId
+    ? payload.records.find((record) => record.id === selectedPlotId) ?? null
     : null;
   const visibleRecords = useMemo(
-    () => (selectedDatasetId ? (selectedDatasetRecord ? [selectedDatasetRecord] : []) : filterRecords(payload.records, query, effectiveCheckedPlotIds)),
-    [payload.records, query, effectiveCheckedPlotIds, selectedDatasetId, selectedDatasetRecord],
+    () => filterRecords(payload.records, query, effectiveCheckedPlotIds),
+    [payload.records, query, effectiveCheckedPlotIds],
   );
   const status = useMemo(() => galleryStatus(payload.records), [payload.records]);
   const noVisiblePlotsMessage = emptyGalleryMessage(
@@ -141,30 +166,40 @@ function App(props: StreamlitProps) {
     effectiveCheckedPlotIds,
     hasUserFilter,
   );
-  const selectedRecord =
-    selectedDatasetRecord ?? payload.records.find((record) => record.id === selectedPlotId) ?? null;
+  const selectedRecord = selectedPlotRecord ?? null;
   const maximizedRecord =
     payload.records.find((record) => record.id === maximizedPlotId) ?? selectedRecord;
-
   function selectPlot(plotId: string) {
     setSelectedDatasetId(null);
+    setSelectedFileId(`plot:${plotId}`);
     setSelectedPlotId(plotId);
   }
 
   function selectDataset(datasetId: string) {
-    const dataset = payload.datasets.find((item) => item.id === datasetId) ?? null;
+    if (selectedDatasetId === datasetId) {
+      setSelectedDatasetId(null);
+      setSelectedFileId(null);
+      return;
+    }
     setSelectedDatasetId(datasetId);
-    setSelectedPlotId(dataset?.associatedPlotId ?? null);
+    setSelectedFileId(`csv:${datasetId}`);
   }
 
   function draftDataset(datasetId: string) {
+    setDraftPreferencesDatasetId(datasetId);
+  }
+
+  function draftDatasetWithPreferences(datasetId: string, redraw: RedrawMetadata, outputFormat: "svg" | "png") {
     Streamlit.setComponentValue({
       event: {
-        id: eventId("draft_dataset"),
-        type: "draft_dataset",
+        id: eventId("draft_dataset_with_preferences"),
+        type: "draft_dataset_with_preferences",
         dataset_id: datasetId,
+        redraw,
+        output_format: outputFormat,
       },
     });
+    setDraftPreferencesDatasetId(null);
   }
 
   function draftCheckedDatasets() {
@@ -173,35 +208,6 @@ function App(props: StreamlitProps) {
         id: eventId("draft_checked_datasets"),
         type: "draft_checked_datasets",
         dataset_ids: [...checkedDatasetIds],
-      },
-    });
-  }
-
-  function changeProjectRoot(rootPath: string) {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("change_project_root"),
-        type: "change_project_root",
-        root_path: rootPath,
-      },
-    });
-  }
-
-  function resetProjectRoot() {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("reset_project_root"),
-        type: "reset_project_root",
-      },
-    });
-  }
-
-  function forgetRecentRoot(rootPath: string) {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("forget_recent_root"),
-        type: "forget_recent_root",
-        root_path: rootPath,
       },
     });
   }
@@ -267,7 +273,7 @@ function App(props: StreamlitProps) {
             aria-label={treeCollapsed ? "Show output tree" : "Hide output tree"}
             onClick={() => setTreeCollapsed((current) => !current)}
           >
-            <span aria-hidden="true">☰</span>
+            <Menu aria-hidden="true" size={15} />
           </button>
         </div>
         {treeCollapsed ? null : (
@@ -284,22 +290,32 @@ function App(props: StreamlitProps) {
             />
             <Tree
               node={tree}
-              records={referenceRecords}
+              files={payload.files}
+              records={payload.records}
               selectedFolder={selectedFolder}
               selectedPlotId={selectedPlotId}
+              selectedDatasetId={selectedDatasetId}
+              selectedFileId={selectedFileId}
               checkedPlotIds={effectiveCheckedPlotIds}
+              checkedDatasetIds={checkedDatasetIds}
               onSelectFolder={setSelectedFolder}
               onSelectPlot={selectPlot}
-              onToggleFolder={(path, checked) => {
+              onSelectDataset={selectDataset}
+              onToggleFolder={(path, checked, plotIds, datasetIds) => {
                 setHasUserFilter(true);
                 setCheckedPlotIds((current) => {
                   const next = new Set(current);
-                  const folderPlotIds = referenceRecords
-                    .filter((record) => foldersFor(record).includes(path))
-                    .map((record) => record.id);
-                  folderPlotIds.forEach((plotId) => {
+                  plotIds.forEach((plotId) => {
                     if (checked) next.add(plotId);
                     else next.delete(plotId);
+                  });
+                  return next;
+                });
+                setCheckedDatasetIds((current) => {
+                  const next = new Set(current);
+                  datasetIds.forEach((datasetId) => {
+                    if (checked) next.add(datasetId);
+                    else next.delete(datasetId);
                   });
                   return next;
                 });
@@ -313,13 +329,8 @@ function App(props: StreamlitProps) {
                   return next;
                 });
               }}
-            />
-            <DatasetList
-              datasets={payload.datasets}
-              selectedDatasetId={selectedDatasetId}
-              checkedDatasetIds={checkedDatasetIds}
-              onSelectDataset={selectDataset}
               onToggleDataset={(datasetId, checked) => {
+                setHasUserFilter(true);
                 setCheckedDatasetIds((current) => {
                   const next = new Set(current);
                   if (checked) next.add(datasetId);
@@ -347,26 +358,11 @@ function App(props: StreamlitProps) {
 
       <main className="mg-workspace" aria-label="Plot workspace">
         <div className="mg-workspace-header">
-          <div>
-            <div className="mg-eyebrow">{payload.datasets.length} CSV tables</div>
-            <div className="mg-workspace-title">CSV plot studio</div>
+          <div className="mg-workspace-heading">
+            <div className="mg-eyebrow">{payload.files.length} files</div>
+            <div className="mg-workspace-title">Plot file explorer</div>
           </div>
           <div className="mg-header-actions">
-            <RootChooser
-              rootContext={rootContext}
-              rootDraft={rootDraft}
-              open={rootMenuOpen}
-              onOpenChange={setRootMenuOpen}
-              onRootDraftChange={setRootDraft}
-              onChangeRoot={changeProjectRoot}
-              onResetRoot={resetProjectRoot}
-              onForgetRoot={forgetRecentRoot}
-            />
-            {selectedDataset ? (
-              <button className="mg-primary" type="button" onClick={() => draftDataset(selectedDataset.id)}>
-                Generate draft
-              </button>
-            ) : null}
             {checkedDatasetIds.size ? (
               <button className="mg-inspector-toggle" type="button" onClick={draftCheckedDatasets}>
                 Draft checked CSVs
@@ -386,49 +382,69 @@ function App(props: StreamlitProps) {
             </button>
           </div>
         </div>
-        <section className="mg-gallery" aria-label="Plot gallery">
-          <div className="mg-gallery-toolbar">
-            <strong>
-              {selectedDataset ? selectedDataset.displayName : `${visibleRecords.length} plot${visibleRecords.length === 1 ? "" : "s"}`}
-            </strong>
-            <label>
-              Tile size
-              <input
-                type="range"
-                min="160"
-                max="1400"
-                step="20"
-                value={tileSize}
-                onChange={(event) => updateTileSize(Number(event.target.value))}
-              />
-            </label>
-          </div>
-          <div className="mg-card-grid" style={{ ["--tile-size" as string]: `${tileSize}px` }}>
-            {visibleRecords.length ? visibleRecords.map((record) => (
-              <PlotCard
-                key={record.id}
-                record={record}
-                selected={record.id === selectedRecord?.id}
-                onMaximize={() => maximizePlot(record.id)}
-                expanded={expandedCardIds.has(record.id)}
-                onToggleExpanded={() => {
-                  setExpandedCardIds((current) => {
-                    const next = new Set(current);
-                    if (next.has(record.id)) next.delete(record.id);
-                    else next.add(record.id);
-                    return next;
-                  });
-                }}
-              />
-            )) : (
-              <EmptyGallery
-                message={selectedDataset ? datasetEmptyMessage(selectedDataset) : noVisiblePlotsMessage}
-                actionLabel={selectedDataset ? "Generate draft plot" : undefined}
-                onAction={selectedDataset ? () => draftDataset(selectedDataset.id) : undefined}
-              />
-            )}
-          </div>
-        </section>
+        <div className={`mg-workspace-body ${selectedDataset ? "has-drawer" : ""}`}>
+          <section className="mg-gallery" aria-label="Plot gallery">
+            <div className="mg-gallery-toolbar">
+              <strong>{`${visibleRecords.length} plot${visibleRecords.length === 1 ? "" : "s"}`}</strong>
+              <label>
+                Tile size
+                <input
+                  type="range"
+                  min="160"
+                  max="1400"
+                  step="20"
+                  value={tileSize}
+                  onChange={(event) => updateTileSize(Number(event.target.value))}
+                />
+              </label>
+            </div>
+            <div className="mg-card-grid" style={{ ["--tile-size" as string]: `${tileSize}px` }}>
+              {visibleRecords.length || checkedCsvCards.length ? (
+                <>
+                  {visibleRecords.map((record) => (
+                    <PlotCard
+                      key={record.id}
+                      record={record}
+                      selected={record.id === selectedRecord?.id}
+                      onMaximize={() => maximizePlot(record.id)}
+                      expanded={expandedCardIds.has(record.id)}
+                      onToggleExpanded={() => {
+                        setExpandedCardIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(record.id)) next.delete(record.id);
+                          else next.add(record.id);
+                          return next;
+                        });
+                      }}
+                    />
+                  ))}
+                  {checkedCsvCards
+                    .map((dataset) => (
+                      <CsvDraftCard
+                        key={dataset.id}
+                        dataset={dataset}
+                        selected={dataset.id === selectedDatasetId}
+                        onSelect={() => selectDataset(dataset.id)}
+                        onDraft={() => draftDataset(dataset.id)}
+                      />
+                    ))}
+                </>
+              ) : (
+                <EmptyGallery message={noVisiblePlotsMessage} />
+              )}
+            </div>
+          </section>
+          {selectedDataset ? (
+            <CsvPreviewDrawer
+              dataset={selectedDataset}
+              onClose={() => {
+                setSelectedDatasetId(null);
+                setSelectedFileId(null);
+              }}
+              onDraft={() => draftDataset(selectedDataset.id)}
+            />
+          ) : null}
+        </div>
       </main>
 
       {maximizedPlotId && maximizedRecord ? (
@@ -449,135 +465,17 @@ function App(props: StreamlitProps) {
           }}
         />
       ) : null}
+
+      {draftPreferencesDataset ? (
+        <CsvDraftPreferencesModal
+          payload={payload}
+          dataset={draftPreferencesDataset}
+          onClose={() => setDraftPreferencesDatasetId(null)}
+          onGenerate={(redraw, outputFormat) => draftDatasetWithPreferences(draftPreferencesDataset.id, redraw, outputFormat)}
+        />
+      ) : null}
     </div>
   );
-}
-
-function RootChooser({
-  rootContext,
-  rootDraft,
-  open,
-  onOpenChange,
-  onRootDraftChange,
-  onChangeRoot,
-  onResetRoot,
-  onForgetRoot,
-}: {
-  rootContext: NonNullable<BrowserPayload["rootContext"]>;
-  rootDraft: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onRootDraftChange: (value: string) => void;
-  onChangeRoot: (rootPath: string) => void;
-  onResetRoot: () => void;
-  onForgetRoot: (rootPath: string) => void;
-}) {
-  const recentRoots = visibleRecentRoots(rootContext.activeRoot, rootContext.recentRoots);
-
-  function submitRoot(event: ReactFormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    onChangeRoot(rootDraft);
-  }
-
-  return (
-    <details className="mg-root-menu" open={open} onToggle={(event) => onOpenChange(event.currentTarget.open)}>
-      <summary aria-label={`Active root ${rootContext.activeRoot}`}>
-        <span className="mg-root-kicker">Root</span>
-        <span>{shortRootLabel(rootContext.activeRoot)}</span>
-      </summary>
-      <div className="mg-root-popover" aria-label="Project root chooser">
-        <form onSubmit={submitRoot} className="mg-root-form">
-          <label htmlFor="project-root-input">Project root</label>
-          <input
-            id="project-root-input"
-            value={rootDraft}
-            onChange={(event) => onRootDraftChange(event.target.value)}
-            placeholder="Paste a project folder path"
-          />
-          {rootContext.error ? <div className="mg-root-error" role="alert">{rootContext.error}</div> : null}
-          <div className="mg-root-actions">
-            <button type="submit" className="mg-primary">Open root</button>
-            <button type="button" className="mg-inspector-toggle" onClick={onResetRoot}>
-              Use launch root
-            </button>
-          </div>
-        </form>
-        {recentRoots.length ? (
-          <div className="mg-root-recents">
-            <div className="mg-root-recents-title">Recent roots</div>
-            {recentRoots.map((root) => (
-              <div className="mg-root-recent" key={root}>
-                <button type="button" onClick={() => onChangeRoot(root)} title={root}>
-                  {shortRootLabel(root)}
-                </button>
-                <button type="button" aria-label={`Forget ${root}`} onClick={() => onForgetRoot(root)}>
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </details>
-  );
-}
-
-function DatasetList({
-  datasets,
-  selectedDatasetId,
-  checkedDatasetIds,
-  onSelectDataset,
-  onToggleDataset,
-}: {
-  datasets: DatasetRecord[];
-  selectedDatasetId: string | null;
-  checkedDatasetIds: Set<string>;
-  onSelectDataset: (datasetId: string) => void;
-  onToggleDataset: (datasetId: string, checked: boolean) => void;
-}) {
-  const roots = groupDatasetsByRoot(datasets);
-  return (
-    <div className="mg-dataset-tree" aria-label="CSV datasets">
-      <div className="mg-tree-section-title">CSV tables</div>
-      {roots.map(([root, rootDatasets]) => (
-        <details key={root} open>
-          <summary>
-            <span>{root || "data"}</span>
-            <span className="mg-count">{rootDatasets.length}</span>
-          </summary>
-          {rootDatasets.map((dataset) => (
-            <div
-              key={dataset.id}
-              className={`mg-tree-row mg-tree-dataset ${selectedDatasetId === dataset.id ? "is-selected" : ""}`}
-              role="treeitem"
-              aria-selected={selectedDatasetId === dataset.id}
-            >
-              <input
-                type="checkbox"
-                className="mg-tree-check"
-                aria-label={`Include CSV ${dataset.displayName}`}
-                checked={checkedDatasetIds.has(dataset.id)}
-                onChange={(event) => onToggleDataset(dataset.id, event.target.checked)}
-              />
-              <button type="button" className="mg-tree-label" onClick={() => onSelectDataset(dataset.id)}>
-                <span className="mg-tree-name">{dataset.displayName}</span>
-                <span className={`mg-status-dot is-${dataset.draftStatus}`} title={dataset.draftStatus} />
-              </button>
-            </div>
-          ))}
-        </details>
-      ))}
-    </div>
-  );
-}
-
-function groupDatasetsByRoot(datasets: DatasetRecord[]): [string, DatasetRecord[]][] {
-  const groups = new Map<string, DatasetRecord[]>();
-  datasets.forEach((dataset) => {
-    const label = dataset.csvRootPath || dataset.csvRootId || "data";
-    groups.set(label, [...(groups.get(label) ?? []), dataset]);
-  });
-  return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
 }
 
 function EmptyGallery({
@@ -601,38 +499,300 @@ function EmptyGallery({
   );
 }
 
-function datasetEmptyMessage(dataset: DatasetRecord): string {
-  if (dataset.draftStatus === "no_numeric_columns") {
-    return "This CSV has no numeric columns to draft automatically.";
+function CsvPreviewDrawer({
+  dataset,
+  onClose,
+  onDraft,
+}: {
+  dataset: DatasetRecord;
+  onClose: () => void;
+  onDraft: () => void;
+}) {
+  return (
+    <aside className="mg-csv-drawer" aria-label={`CSV preview for ${dataset.displayName}`}>
+      <div className="mg-csv-drawer-head">
+        <div>
+          <div className="mg-eyebrow">CSV preview</div>
+          <h2>{dataset.displayName}</h2>
+          <p>{dataset.path}</p>
+        </div>
+        <button type="button" className="mg-inspector-toggle" onClick={onClose}>
+          Back to gallery
+        </button>
+      </div>
+      <div className="mg-badges">
+        <span>{dataset.columns.length} columns</span>
+        <span>{dataset.previewRows.length} preview rows</span>
+        <span>{dataset.previewTruncated ? "truncated" : "full preview"}</span>
+        <span>{dataset.rowCountSampled} sampled rows</span>
+      </div>
+      {dataset.previewError ? (
+        <div className="mg-error" role="alert">
+          Preview failed: {dataset.previewError}
+        </div>
+      ) : dataset.previewColumns.length === 0 ? (
+        <div className="mg-empty">No table preview available for this CSV.</div>
+      ) : (
+        <div className="mg-csv-table-wrap">
+          <table className="mg-csv-table">
+            <thead>
+              <tr>
+                {dataset.previewColumns.map((column) => (
+                  <th key={column}>{column}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataset.previewRows.map((row, index) => (
+                <tr key={`${dataset.id}-row-${index}`}>
+                  {dataset.previewColumns.map((column) => (
+                    <td key={`${dataset.id}-${index}-${column}`}>{row[column] == null ? "" : String(row[column])}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="mg-card-actions">
+        <button type="button" className="mg-primary" onClick={onDraft}>
+          Generate companion plot
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function CsvDraftCard({
+  dataset,
+  selected,
+  onSelect,
+  onDraft,
+}: {
+  dataset: DatasetRecord;
+  selected: boolean;
+  onSelect: () => void;
+  onDraft: () => void;
+}) {
+  return (
+    <article className={`mg-card mg-csv-card ${selected ? "is-selected" : ""}`}>
+      <button type="button" className="mg-csv-card-head" aria-label={`Preview CSV ${dataset.displayName}`} onClick={onSelect}>
+        <div className="mg-csv-card-icon">
+          <Table2 aria-hidden="true" size={18} />
+        </div>
+        <div className="mg-csv-card-title" title={dataset.displayName}>{dataset.displayName}</div>
+      </button>
+      <div className="mg-card-body">
+        <div className="mg-card-meta">
+          <div className="mg-badges">
+            <span>{dataset.columns.length} columns</span>
+            <span>{dataset.numericColumns.length} numeric</span>
+            <span>{dataset.rowCountSampled} sampled rows</span>
+            <span>{dataset.draftStatus}</span>
+          </div>
+        </div>
+        <div className="mg-card-actions">
+          <button type="button" className="mg-primary" onClick={onDraft}>
+            Generate plot
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function CsvDraftPreferencesModal({
+  payload,
+  dataset,
+  onClose,
+  onGenerate,
+}: {
+  payload: BrowserPayload;
+  dataset: DatasetRecord;
+  onClose: () => void;
+  onGenerate: (redraw: RedrawMetadata, outputFormat: "svg" | "png") => void;
+}) {
+  const inferred = useMemo(() => inferDraftRedraw(dataset), [dataset]);
+  const [redraw, setRedraw] = useState<RedrawMetadata>(inferred);
+  const [series, setSeries] = useState<SeriesStyle[]>(inferred.series ?? []);
+  const [outputFormat, setOutputFormat] = useState<"svg" | "png">("svg");
+
+  useEffect(() => {
+    setRedraw(inferred);
+    setSeries(inferred.series ?? []);
+  }, [inferred]);
+
+  const columns = dataset.columns.length ? dataset.columns : [...dataset.numericColumns, ...dataset.categoricalColumns];
+  const yColumn = series[0]?.y ?? dataset.numericColumns.find((column) => column !== redraw.x) ?? dataset.numericColumns[0] ?? columns[0] ?? "";
+  const defaultColor = payload.options.colors[0]?.value ?? "#1f77b4";
+  const activeStyle = series[0] ?? { y: yColumn, color: defaultColor };
+
+  function updateStyle(patch: Partial<SeriesStyle>) {
+    setSeries((current) => [{ ...activeStyle, ...patch }, ...current.slice(1)]);
   }
-  if (dataset.draftStatus === "empty_csv") {
-    return "This CSV is empty.";
+
+  function generate() {
+    onGenerate(normalizeRedraw(redraw, [{ ...activeStyle, y: yColumn }]), outputFormat);
   }
-  return "No draft plot exists for this CSV yet.";
+
+  return (
+    <div className="mg-modal-backdrop" role="dialog" aria-modal="true" aria-label={`Draft plot preferences for ${dataset.displayName}`}>
+      <section className="mg-modal-card is-compact">
+        <div className="mg-modal-head">
+          <div>
+            <div className="mg-eyebrow">Draft plot preferences</div>
+            <h2>{dataset.displayName}</h2>
+          </div>
+          <button type="button" className="mg-inspector-toggle" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <div className="mg-draft-form">
+          <div className="mg-field-grid two">
+            <label>
+              Plot type
+              <select value={redraw.kind ?? "line"} onChange={(event) => setRedraw((current) => ({ ...current, kind: event.target.value }))}>
+                {payload.options.plotKinds.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Output
+              <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value === "png" ? "png" : "svg")}>
+                <option value="svg">SVG</option>
+                <option value="png">PNG</option>
+              </select>
+            </label>
+            <label>
+              X column
+              <select value={redraw.x ?? ""} onChange={(event) => setRedraw((current) => ({ ...current, x: event.target.value }))}>
+                {columns.map((column) => (
+                  <option key={column} value={column}>
+                    {column}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Y column
+              <select value={yColumn} onChange={(event) => updateStyle({ y: event.target.value })}>
+                {dataset.numericColumns.map((column) => (
+                  <option key={column} value={column}>
+                    {column}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Title
+              <input value={redraw.title ?? ""} onChange={(event) => setRedraw((current) => ({ ...current, title: event.target.value }))} />
+            </label>
+            <label>
+              Color
+              <select value={activeStyle.color ?? defaultColor} onChange={(event) => updateStyle({ color: event.target.value })}>
+                {payload.options.colors.map((color) => (
+                  <option key={color.value} value={color.value}>
+                    {color.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mg-toggle-strip">
+            <label className="mg-mini-toggle">
+              <input
+                type="checkbox"
+                checked={redraw.grid ?? true}
+                onChange={(event) => setRedraw((current) => ({ ...current, grid: event.target.checked }))}
+              />
+              <span>Grid</span>
+            </label>
+          </div>
+        </div>
+        <div className="mg-modal-actions">
+          <button type="button" className="mg-primary" onClick={generate}>
+            Generate companion
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function inferDraftRedraw(dataset: DatasetRecord): RedrawMetadata {
+  const numeric = dataset.numericColumns;
+  const categorical = dataset.categoricalColumns;
+  const columns = dataset.columns.length ? dataset.columns : [...categorical, ...numeric];
+  let kind = "line";
+  let x = numeric[0] ?? columns[0];
+  let y = numeric.find((column) => column !== x) ?? numeric[0] ?? columns[0];
+  if (categorical.length > 0 && numeric.length === 1) {
+    kind = "bar";
+    x = categorical[0];
+    y = numeric[0];
+  }
+  return {
+    kind,
+    x,
+    y: y ? [y] : [],
+    title: humanTitle(dataset.displayName.replace(/\.[^.]+$/, "")),
+    xlabel: x ? humanTitle(x) : undefined,
+    ylabel: y ? humanTitle(y) : undefined,
+    grid: true,
+    figure: { width_inches: 7, height_inches: 4.5, dpi: 150 },
+    series: y ? [{ y, color: "#1f77b4", marker: kind === "line" ? "o" : undefined }] : [],
+  };
+}
+
+function humanTitle(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
 function Tree({
   node,
+  files,
   records,
   selectedFolder,
   selectedPlotId,
+  selectedDatasetId,
+  selectedFileId,
   checkedPlotIds,
+  checkedDatasetIds,
   onSelectFolder,
   onSelectPlot,
+  onSelectDataset,
   onToggleFolder,
   onTogglePlot,
+  onToggleDataset,
 }: {
   node: TreeNode;
+  files: FileItem[];
   records: PlotRecord[];
   selectedFolder: string;
   selectedPlotId: string | null;
+  selectedDatasetId: string | null;
+  selectedFileId: string | null;
   checkedPlotIds: Set<string>;
+  checkedDatasetIds: Set<string>;
   onSelectFolder: (path: string) => void;
   onSelectPlot: (plotId: string) => void;
-  onToggleFolder: (path: string, checked: boolean) => void;
+  onSelectDataset: (datasetId: string) => void;
+  onToggleFolder: (path: string, checked: boolean, plotIds: string[], datasetIds: string[]) => void;
   onTogglePlot: (plotId: string, checked: boolean) => void;
+  onToggleDataset: (datasetId: string, checked: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(["."]));
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([".", ...node.children.map((child) => child.path)]));
+
+  useEffect(() => {
+    setExpanded((current) => new Set([".", ...node.children.map((child) => child.path), ...current]));
+  }, [node]);
 
   function toggle(path: string) {
     setExpanded((current) => {
@@ -643,25 +803,29 @@ function Tree({
     });
   }
 
-  function folderRecords(path: string) {
-    return records.filter((record) => foldersFor(record).includes(path));
-  }
-
-  function immediateRecords(path: string) {
-    return records
-      .filter((record) => parentFolder(record.imagePath) === path)
-      .sort((left, right) => left.name.localeCompare(right.name));
+  function folderFiles(path: string) {
+    if (path === ".") return files;
+    return files.filter((file) => file.path === path || file.path.startsWith(`${path}/`));
   }
 
   function renderNode(current: TreeNode, depth = 0) {
     const isExpanded = expanded.has(current.path);
     const isSelected = selectedFolder === current.path;
-    const descendantRecords = folderRecords(current.path);
-    const checkedCount = descendantRecords.filter((record) => checkedPlotIds.has(record.id)).length;
-    const allChecked = descendantRecords.length > 0 && checkedCount === descendantRecords.length;
+    const descendantFiles = folderFiles(current.path);
+    const descendantPlotIds = descendantFiles
+      .map((file) => file.plotId)
+      .filter((plotId): plotId is string => typeof plotId === "string");
+    const descendantDatasetIds = descendantFiles
+      .filter((file) => file.kind === "csv")
+      .map((file) => file.datasetId)
+      .filter((datasetId): datasetId is string => typeof datasetId === "string");
+    const checkedPlotCount = descendantPlotIds.filter((plotId) => checkedPlotIds.has(plotId)).length;
+    const checkedDatasetCount = descendantDatasetIds.filter((datasetId) => checkedDatasetIds.has(datasetId)).length;
+    const totalCheckable = descendantPlotIds.length + descendantDatasetIds.length;
+    const checkedCount = checkedPlotCount + checkedDatasetCount;
+    const allChecked = totalCheckable > 0 && checkedCount === totalCheckable;
     const partiallyChecked = checkedCount > 0 && !allChecked;
-    const childPlots = immediateRecords(current.path);
-    const hasExpandableChildren = current.children.length > 0 || childPlots.length > 0;
+    const hasExpandableChildren = current.children.length > 0 || current.files.length > 0;
     return (
       <div key={current.path} className="mg-tree-node">
         <div
@@ -678,7 +842,9 @@ function Tree({
             disabled={!hasExpandableChildren}
             onClick={() => toggle(current.path)}
           >
-            {hasExpandableChildren ? (isExpanded ? "▾" : "▸") : ""}
+            {hasExpandableChildren ? (
+              isExpanded ? <ChevronDown aria-hidden="true" size={14} /> : <ChevronRight aria-hidden="true" size={14} />
+            ) : ""}
           </button>
           <input
             type="checkbox"
@@ -688,13 +854,14 @@ function Tree({
             ref={(element) => {
               if (element) element.indeterminate = partiallyChecked;
             }}
-            onChange={(event) => onToggleFolder(current.path, event.target.checked)}
+            onChange={(event) => onToggleFolder(current.path, event.target.checked, descendantPlotIds, descendantDatasetIds)}
           />
           <button
             type="button"
             className="mg-tree-label"
             onClick={() => onSelectFolder(current.path)}
           >
+            <FileIcon kind={isExpanded ? "folder-open" : "folder"} />
             <span className="mg-tree-name">{current.label}</span>
             <span className={`mg-count ${checkedCount ? "has-checked" : ""}`}>
               {checkedCount ? `${checkedCount}/` : ""}
@@ -705,33 +872,29 @@ function Tree({
         {isExpanded ? (
           <>
             {current.children.map((child) => renderNode(child, depth + 1))}
-            {childPlots.map((record) => (
-              <div
-                key={record.id}
-                className={`mg-tree-row mg-tree-plot ${selectedPlotId === record.id ? "is-selected" : ""}`}
-                style={{ paddingLeft: `${(depth + 1) * 14 + 4}px` }}
-                role="treeitem"
-                aria-selected={selectedPlotId === record.id}
-              >
-                <span className="mg-tree-twisty" aria-hidden="true" />
-                <input
-                  type="checkbox"
-                  className="mg-tree-check"
-                  aria-label={`Include plot ${record.name}`}
-                  checked={checkedPlotIds.has(record.id)}
-                  onChange={(event) => onTogglePlot(record.id, event.target.checked)}
-                />
-                <button
-                  type="button"
-                  className="mg-tree-label"
-                  onClick={() => {
-                    onSelectFolder(current.path);
-                    onSelectPlot(record.id);
-                  }}
-                >
-                  <span className="mg-tree-name">{record.name}</span>
-                </button>
-              </div>
+            {current.files.map((file) => (
+              <FileTreeRow
+                key={file.id}
+                file={file}
+                depth={depth + 1}
+                selected={
+                  selectedFileId === file.id
+                  || (file.plotId != null && selectedPlotId === file.plotId)
+                  || (file.datasetId != null && selectedDatasetId === file.datasetId)
+                }
+                checked={file.kind === "image"
+                  ? Boolean(file.plotId && checkedPlotIds.has(file.plotId))
+                  : Boolean(file.datasetId && checkedDatasetIds.has(file.datasetId))}
+                onToggle={(checked) => {
+                  if (file.plotId) onTogglePlot(file.plotId, checked);
+                  if (file.datasetId) onToggleDataset(file.datasetId, checked);
+                }}
+                onSelect={() => {
+                  onSelectFolder(current.path);
+                  if (file.kind === "image" && file.plotId) onSelectPlot(file.plotId);
+                  if (file.kind === "csv" && file.datasetId) onSelectDataset(file.datasetId);
+                }}
+              />
             ))}
           </>
         ) : null}
@@ -742,10 +905,58 @@ function Tree({
   return <div role="tree">{renderNode(node)}</div>;
 }
 
-function parentFolder(imagePath: string): string {
-  const parts = imagePath.split("/");
-  if (parts.length <= 1) return ".";
-  return parts.slice(0, -1).join("/");
+function FileTreeRow({
+  file,
+  depth,
+  selected,
+  checked,
+  onToggle,
+  onSelect,
+}: {
+  file: FileItem;
+  depth: number;
+  selected: boolean;
+  checked: boolean;
+  onToggle: (checked: boolean) => void;
+  onSelect: () => void;
+}) {
+  return (
+    <div
+      className={`mg-tree-row mg-tree-file mg-tree-${file.kind} ${selected ? "is-selected" : ""}`}
+      style={{ paddingLeft: `${depth * 14 + 4}px` }}
+      role="treeitem"
+      aria-selected={selected}
+    >
+      <span className="mg-tree-twisty" aria-hidden="true" />
+      {file.kind === "image" || file.kind === "csv" ? (
+        <input
+          type="checkbox"
+          className="mg-tree-check"
+          aria-label={`Include ${file.kind === "csv" ? "CSV" : "plot"} ${file.name}`}
+          checked={checked}
+          onChange={(event) => onToggle(event.target.checked)}
+        />
+      ) : (
+        <span className="mg-tree-check-spacer" aria-hidden="true" />
+      )}
+      <button type="button" className="mg-tree-label" onClick={onSelect}>
+        <FileIcon kind={file.iconKind} />
+        <span className="mg-tree-name">{file.name}</span>
+        {file.iconKind === "csv-drafted" ? (
+          <span className="mg-file-status" title="Companion plot generated">
+            <CheckCircle2 aria-hidden="true" size={12} />
+          </span>
+        ) : null}
+      </button>
+    </div>
+  );
+}
+
+function FileIcon({ kind }: { kind: "folder" | "folder-open" | FileItem["iconKind"] }) {
+  if (kind === "folder") return <Folder className="mg-file-icon" aria-label="Folder" size={14} />;
+  if (kind === "folder-open") return <FolderOpen className="mg-file-icon" aria-label="Folder" size={14} />;
+  if (kind === "image") return <FileImage className="mg-file-icon" aria-label="Image file" size={14} />;
+  return <Table2 className="mg-file-icon" aria-label="CSV file" size={14} />;
 }
 
 function SelectedPlot({

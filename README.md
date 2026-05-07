@@ -47,8 +47,8 @@ mplgallery run
 
 `run` is an alias for `serve` and is intended as the simple installed-package
 entrypoint: run it from the analysis/project root and MPLGallery starts the
-local Streamlit CSV Plot Studio. Existing PNG/SVG files are not scanned into the
-main gallery unless you explicitly opt into artifact/reference mode.
+local Streamlit CSV Plot Studio. PNG/SVG references and draftable CSV files are
+shown together in one project file explorer.
 
 You can also start from any folder and switch roots inside the app:
 
@@ -58,9 +58,10 @@ mplgallery run C:\path\to\starting\project --choose-root
 ```
 
 The root chooser stores only convenience settings, such as recent project
-folders, under the user config directory. Plot recipes, generated scripts,
-plot-ready CSVs, cached previews, and generated figures stay inside the
-selected project or analysis folder.
+folders, under the user config directory. Use recent roots, paste a folder path,
+or use the local Browse action where the desktop folder picker is available.
+Plot recipes, generated scripts, plot-ready CSVs, cached previews, and generated
+figures stay inside the selected project or analysis folder.
 
 ## Scan a project
 
@@ -126,11 +127,11 @@ analysis_name/
   config/            # optional project configuration
 ```
 
-By default, `serve` uses CSV tables under `data/` roots and
-`results/final/tables/` roots, and it shows PNG/SVG references only from
-`results/final/figures/`. Disposable `results/runs/` content is ignored. Legacy
-or non-standard figure folders can still be imported explicitly with
-`import-artifacts`.
+By default, `serve` uses draftable CSV tables under `data/`, `plots/`, and
+`results/final/tables/` roots, and it shows PNG/SVG references in the same file
+explorer. Disposable `data/raw/`, `results/runs/`, docs builds, and other
+scratch outputs are ignored by default. Legacy or non-standard figure folders
+can still be imported explicitly with `import-artifacts`.
 
 Initialize a CSV folder without rendering:
 
@@ -171,17 +172,18 @@ write derived CSVs only under `.mplgallery/plot_ready/`.
 
 ## Import Existing Images As References
 
-Existing PNG/SVG browsing is explicit reference mode:
+Existing PNG/SVG browsing is part of the default unified explorer. Explicit
+reference import remains useful when you want to persist metadata for a specific
+legacy artifact folder:
 
 ```bash
 mplgallery import-artifacts /path/to/project/legacy/plots
-mplgallery scan /path/to/project --include-artifacts
-mplgallery run /path/to/project --include-artifacts
+mplgallery scan /path/to/project
+mplgallery run /path/to/project
 ```
 
-Curated images in `results/final/figures/` are shown as reference-only records
-by default. Other imported images remain reference-only unless a CSV-backed
-recipe is added.
+Curated images and nearby CSV companions are shown by default. Imported images
+remain reference-only unless a CSV-backed recipe is added.
 
 ## Import Existing Plot Manifests
 
@@ -228,6 +230,9 @@ Axis units can use plain text or latex/mathtext strings such as
 
 - `examples/architecture_project`: standard `analyses/<id>/data` and
   `results/final/{figures,tables}` layout.
+- `examples/plot_types_project`: main mixed explorer fixture with PNG/SVG
+  references and draftable CSV companions for line, scatter, bar, barh, area,
+  hist, and step plots.
 - `examples/sample_project`: original browser-first sample with PNG and SVG.
 - `examples/generic_plots_project`: line and scatter examples.
 - `examples/distribution_plots_project`: bar and histogram examples.
@@ -245,6 +250,7 @@ assets:
 ```bash
 uv run --no-sync python examples/generic_plots_project/scripts/generate_data.py
 uv run --no-sync python examples/generic_plots_project/scripts/render_plots.py
+uv run --no-sync python examples/plot_types_project/scripts/generate_plot_types.py
 ```
 
 ## Wheel Smoke Test

@@ -86,6 +86,24 @@ export type DatasetRecord = {
   columns: string[];
   numericColumns: string[];
   categoricalColumns: string[];
+  previewColumns: string[];
+  previewRows: Array<Record<string, string | number | null>>;
+  previewTruncated: boolean;
+  previewError?: string | null;
+};
+
+export type FileItem = {
+  id: string;
+  kind: "csv" | "image";
+  path: string;
+  name: string;
+  parentPath: string;
+  iconKind: "csv" | "csv-drafted" | "image";
+  suffix?: string | null;
+  visibilityRole?: string | null;
+  draftStatus?: string | null;
+  plotId?: string | null;
+  datasetId?: string | null;
 };
 
 export type AxisDefaults = {
@@ -105,6 +123,7 @@ export type BrowserPayload = {
   selectedPlotId?: string | null;
   datasets: DatasetRecord[];
   records: PlotRecord[];
+  files: FileItem[];
   options: {
     plotKinds: string[];
     lineStyles: SelectOption[];
@@ -124,7 +143,9 @@ export type ComponentEvent =
   | { id: string; type: "request_rerender"; plot_id: string }
   | { id: string; type: "select_dataset"; dataset_id: string }
   | { id: string; type: "draft_dataset"; dataset_id: string }
+  | { id: string; type: "draft_dataset_with_preferences"; dataset_id: string; redraw: RedrawMetadata; output_format: "svg" | "png" }
   | { id: string; type: "draft_checked_datasets"; dataset_ids: string[] }
+  | { id: string; type: "browse_project_root" }
   | { id: string; type: "change_project_root"; root_path: string }
   | { id: string; type: "reset_project_root" }
   | { id: string; type: "forget_recent_root"; root_path: string };
@@ -142,4 +163,5 @@ export type TreeNode = {
   label: string;
   count: number;
   children: TreeNode[];
+  files: FileItem[];
 };
