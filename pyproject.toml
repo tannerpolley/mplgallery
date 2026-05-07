@@ -28,6 +28,7 @@ dependencies = [
 dvc = ["dvc>=3.0"]
 mlflow = ["mlflow>=2.0"]
 integrations = ["dvc>=3.0", "mlflow>=2.0"]
+desktop = ["pywebview>=5.4; platform_system == 'Windows'"]
 
 [dependency-groups]
 dev = [
@@ -40,6 +41,9 @@ dev = [
 
 [project.scripts]
 mplgallery = "mplgallery.cli:main"
+
+[project.gui-scripts]
+mplgallery-desktop = "mplgallery.desktop:gui_main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mplgallery"]

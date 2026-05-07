@@ -1,0 +1,16 @@
+version: 1
+plot_id: line
+title: Line Plot
+files:
+  figures:
+  - line.svg
+  data:
+  - line.csv
+matplotlib:
+  kind: line
+  title: Line Plot
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150

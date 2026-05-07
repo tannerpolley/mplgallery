@@ -1,11 +1,10 @@
 # mplgallery
 
-`mplgallery` is a local-first CSV Plot Studio for Python analysis projects. It
-expects an opinionated analysis layout, discovers CSV tables under
-`analyses/<id>/data/` and `analyses/<id>/results/final/tables/`, drafts editable
-Matplotlib plots, and stores
-MPLGallery-owned recipes, scripts, plot-ready CSVs, and cached previews inside a
-colocated `.mplgallery/` folder.
+`mplgallery` is a local-first plot-set manager for Python analysis projects. It
+discovers project-owned plot sets under `results/<plot_set>/`, groups the CSV
+snapshots, PNG/SVG/PDF figures, and `.mpl.yaml` sidecars that belong together,
+and provides a Streamlit UI for browsing and lightly editing Matplotlib
+appearance metadata.
 
 The package is for plot appearance only. It does not tune, fit, optimize, or
 alter scientific/model computations.
@@ -38,6 +37,12 @@ Optional DVC and MLflow integrations are not installed by default:
 pip install "mplgallery[dvc,mlflow]"
 ```
 
+Windows desktop mode is optional and keeps the browser workflow separate:
+
+```bash
+uv sync --extra desktop
+```
+
 ## Run against a project
 
 ```bash
@@ -47,8 +52,8 @@ mplgallery run
 
 `run` is an alias for `serve` and is intended as the simple installed-package
 entrypoint: run it from the analysis/project root and MPLGallery starts the
-local Streamlit CSV Plot Studio. PNG/SVG references and draftable CSV files are
-shown together in one project file explorer.
+local Streamlit plot-set manager. Results folders, CSV snapshots, and figures
+are shown together in one project file explorer.
 
 You can also start from any folder and switch roots inside the app:
 
@@ -60,8 +65,39 @@ mplgallery run C:\path\to\starting\project --choose-root
 The root chooser stores only convenience settings, such as recent project
 folders, under the user config directory. Use recent roots, paste a folder path,
 or use the local Browse action where the desktop folder picker is available.
-Plot recipes, generated scripts, plot-ready CSVs, cached previews, and generated
-figures stay inside the selected project or analysis folder.
+Plot sets and `.mpl.yaml` sidecars stay inside the selected project or analysis
+folder. User-level settings only store launcher convenience state such as recent
+roots.
+
+## Windows desktop app
+
+On Windows, install the optional desktop extra and launch the native window:
+
+```bash
+mplgallery desktop .
+```
+
+That starts the same local MPLGallery backend but hosts it in its own desktop
+window instead of a normal browser tab.
+
+The package also declares a Windows GUI launcher:
+
+```text
+mplgallery-desktop.exe
+```
+
+That entry point is intended for shortcuts and taskbar pinning because it opens
+without a console window. You can point a shortcut at it and pass a project
+folder path if needed.
+
+Browser mode remains available for automation, browser tooling, or normal web
+use:
+
+```bash
+mplgallery run .
+mplgallery serve .
+mplgallery desktop . --browser
+```
 
 ## Scan a project
 
@@ -71,46 +107,45 @@ mplgallery scan /path/to/project --json
 mplgallery validate /path/to/project
 ```
 
-`scan` reports discovered architecture-standard CSV roots and draft status. It
-also surfaces curated PNG/SVG references from `results/final/figures/`, but it
-does not import arbitrary docs/build/test images. `validate` reports manifest
-references to missing generated plot images or CSV files so ignored/generated
-artifact workflows fail with a clear diagnostic instead of an empty gallery.
+`scan` reports discovered plot sets under `results/**` and compatibility
+CSV/draft state. It ignores `.mplgallery`, docs/build/test noise, and arbitrary
+non-result image assets. `validate` reports manifest references to missing
+generated plot images or CSV files so ignored/generated artifact workflows fail
+with a clear diagnostic instead of an empty gallery.
 
-## CSV Plot Studio Workflow
+## Plot-Set Manager Workflow
 
 ```text
 analysis_project/
   scripts/
+    generate_results.py
+    render_figures.py
   data/
     input/
     raw/
     processed/
-    .mplgallery/
-      manifest.yaml
-      recipes/
-      scripts/
-      plot_ready/
-      cache/
-  analyses/
-    study_id/
-      data/
-        input/
-        raw/
-        processed/
-      results/
-        runs/
-        final/
-          figures/
-          tables/
-          reports/
+  results/
+    response_curve/
+      response_curve.csv
+      response_curve.svg
+      response_curve.png
+      response_curve.mpl.yaml
+    regression_fit/
+      model_curve.csv
+      literature_points.csv
+      regression_fit.svg
+      regression_fit.mpl.yaml
+  .mplgallery/
+    manifest.yaml
+    cache/
+    indexes/
   config/
 ```
 
-Source CSVs are immutable inputs. MPLGallery may sample/copy data into
-`.mplgallery/plot_ready/` and render cached previews into `.mplgallery/cache/`,
-but it does not edit source CSVs and does not run or manage whatever code
-created them.
+Project scripts own data generation and final figure rendering. MPLGallery does
+not tune, fit, optimize, or alter scientific/model computations. It discovers
+the plot sets those scripts produce and can edit `.mpl.yaml` sidecars that the
+render scripts choose to consume.
 
 The expected personal project layout is:
 
@@ -121,17 +156,14 @@ analysis_name/
   data/raw/          # raw outputs from scripts/models/functions
   data/processed/    # cleaned or analysis-ready tables
   results/runs/      # disposable diagnostics; ignored by MPLGallery defaults
-  results/final/figures/ # curated PNG/SVG references surfaced by default
-  results/final/tables/  # curated result CSVs drafted by default
-  results/final/reports/ # optional generated reports
+  results/<plot_set>/ # curated plot snapshots, figures, and .mpl.yaml
   config/            # optional project configuration
 ```
 
-By default, `serve` uses draftable CSV tables under `data/`, `plots/`, and
-`results/final/tables/` roots, and it shows PNG/SVG references in the same file
-explorer. Disposable `data/raw/`, `results/runs/`, docs builds, and other
-scratch outputs are ignored by default. Legacy or non-standard figure folders
-can still be imported explicitly with `import-artifacts`.
+By default, MPLGallery focuses on `results/**` plot sets and hides
+`.mplgallery`, `results/runs`, docs builds, tests, and caches. Legacy CSV-first
+drafting and broad artifact import remain compatibility workflows, not the
+preferred new layout.
 
 Initialize a CSV folder without rendering:
 
@@ -139,36 +171,73 @@ Initialize a CSV folder without rendering:
 mplgallery init /path/to/project/data
 ```
 
-Create draft recipes, generated render scripts, plot-ready CSVs, and cached SVG
-previews:
+Create compatibility draft recipes and generated previews for a CSV folder:
 
 ```bash
 mplgallery draft /path/to/project/data
 mplgallery draft /path/to/project/data --json
 ```
 
-Drafting infers numeric columns, chooses a simple initial plot type, writes YAML
-recipes, and keeps generated artifacts under that folder's `.mplgallery/`
-workspace.
+Drafting infers numeric columns and chooses a simple initial plot type. For new
+work, prefer project render scripts that create `results/<plot_set>/` folders
+with a `.mpl.yaml` sidecar.
+
+## `.mpl.yaml` Sidecar Contract
+
+Matplotlib does not natively read `.mpl.yaml`. Project render scripts, or
+helpers imported by those scripts, should load the YAML and apply the declared
+Matplotlib attributes before saving figures.
+
+```yaml
+version: 1
+plot_id: response_curve
+title: Response curve
+files:
+  figures:
+    - response_curve.svg
+    - response_curve.png
+  data:
+    - response_curve.csv
+render:
+  command: uv run python scripts/render_figures.py --plot response_curve
+matplotlib:
+  kind: line
+  x: time_s
+  title: Response curve
+  xlabel: Time
+  xlabel_unit: "$\\mathrm{s}$"
+  ylabel: Response
+  grid: true
+  legend_location: best
+  figure:
+    width_inches: 6
+    height_inches: 4
+    dpi: 150
+  series:
+    - y: response
+      label: Model
+      color: "#1f77b4"
+      linestyle: "-"
+      marker: "o"
+```
 
 ## pandas And Matplotlib Responsibilities
 
-MPLGallery uses pandas where table-shaped CSV workflows are strongest:
+MPLGallery uses pandas for safe table handling:
 
 - load and sample CSV files;
-- infer quick draft plots from column types;
-- write plot-ready CSV copies under `.mplgallery/plot_ready/`;
-- generate reproducible render scripts that start from `DataFrame.plot(...)`.
+- preview plot-set CSV snapshots;
+- validate column availability for editable sidecars;
+- support compatibility draft plots from standalone CSV files when explicitly requested.
 
 Matplotlib remains the editable figure contract:
 
-- UI metadata edits persist into `.mplgallery/manifest.yaml`;
-- cached rerenders apply the recipe metadata to a Matplotlib figure;
+- UI metadata edits for plot sets persist into `<plot_set>.mpl.yaml`;
+- project render scripts or imported helper utilities apply that YAML to Matplotlib figures;
 - labels, units, scales, limits, legends, grid, figure size, colors, markers,
   line styles, bar hatches, and opacity stay editable.
 
-Source CSVs are never mutated. Any light table prep is recipe metadata and may
-write derived CSVs only under `.mplgallery/plot_ready/`.
+Source CSVs and plot-set CSV snapshots are never mutated by default.
 
 ## Import Existing Images As References
 
@@ -202,9 +271,9 @@ references separately.
 ## Modes
 
 - Static Gallery Mode: browse PNG/SVG/CSV files without modifying the project.
-- Metadata Preview Mode: edit Matplotlib metadata in `.mplgallery/manifest.yaml`
-  and render cached previews from plot-ready CSVs without modifying raw CSVs or
-  generated plot artifacts.
+- Plot-Set Metadata Mode: edit Matplotlib metadata in `<plot_set>.mpl.yaml`.
+  Existing figures without sidecar YAML remain view-only. MPLGallery may run
+  only explicit render commands declared in that sidecar.
 
 ## Plot Formats
 
@@ -228,8 +297,10 @@ Axis units can use plain text or latex/mathtext strings such as
 
 ## Example Projects
 
-- `examples/architecture_project`: standard `analyses/<id>/data` and
-  `results/final/{figures,tables}` layout.
+- `examples/architecture_project`: compatibility fixture for older generated
+  layout behavior.
+- `examples/plot_set_project`: canonical `results/<plot_set>/` fixture with a
+  CSV snapshot, SVG figure, `.mpl.yaml` sidecar, and split generate/render scripts.
 - `examples/plot_types_project`: main mixed explorer fixture with PNG/SVG
   references and draftable CSV companions for line, scatter, bar, barh, area,
   hist, and step plots.

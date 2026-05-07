@@ -1,0 +1,36 @@
+version: 1
+plot_id: response_curve
+title: Response curve
+files:
+  figures:
+    - response_curve.svg
+  data:
+    - response_curve.csv
+render:
+  command: uv run python examples/plot_set_project/scripts/render_figures.py --plot response_curve
+matplotlib:
+  kind: line
+  x: time_s
+  title: Response curve
+  xlabel: Time
+  xlabel_unit: "$\\mathrm{s}$"
+  ylabel: Response
+  grid: true
+  legend_location: best
+  figure:
+    width_inches: 6
+    height_inches: 4
+    dpi: 150
+  series:
+    - y: response
+      label: Model
+      color: "#1f77b4"
+      linewidth: 1.8
+      linestyle: "-"
+      marker: "o"
+    - y: baseline
+      label: Baseline
+      color: "#ff7f0e"
+      linewidth: 1.6
+      linestyle: "--"
+      marker: "s"

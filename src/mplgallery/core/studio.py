@@ -26,6 +26,7 @@ from mplgallery.core.models import (
     PlotMode,
     PlotRecipeRecord,
     PlotRecord,
+    PlotSetRecord,
     RedrawMetadata,
     TablePrepMetadata,
 )
@@ -34,6 +35,7 @@ from mplgallery.core.pandas_plotting import (
     infer_pandas_draft,
     render_pandas_draft_figure,
 )
+from mplgallery.core.plot_sets import discover_plot_sets
 from mplgallery.core.scanner import scan_project
 
 CSV_ROOT_NAMES = {"data"}
@@ -135,6 +137,7 @@ def build_csv_studio_index(
     """Build the CSV-first index used by the CLI and Streamlit host."""
     root = Path(project_root).expanduser().resolve()
     csv_roots = find_csv_roots(root)
+    plot_sets = discover_plot_sets(root)
     datasets: list[DatasetRecord] = []
     records: list[PlotRecord] = []
     ignored_count = _count_ignored_directories(root)
@@ -147,19 +150,28 @@ def build_csv_studio_index(
         else:
             datasets.extend(_non_mutating_dataset_records(csv_root, root))
 
-    imported_artifacts = _architecture_result_artifact_records(root)
+    plot_set_records = _plot_set_records(root, plot_sets)
+    records.extend(plot_set_records)
+    existing_paths = {record.image.path for record in records}
+
+    imported_artifacts = [
+        record
+        for record in _architecture_result_artifact_records(root)
+        if record.image.path not in existing_paths
+    ]
     records.extend(imported_artifacts)
+    existing_paths.update(record.image.path for record in imported_artifacts)
     if include_artifacts:
         scan = scan_project(root)
         manifest = load_manifests(root)
         broad_artifacts = build_plot_records(scan, manifest=manifest)
-        existing_paths = {record.image.path for record in records}
         for record in broad_artifacts:
             if not _is_reference_artifact_path(record.image.relative_path):
                 continue
             if record.image.path not in existing_paths:
                 records.append(record)
                 imported_artifacts.append(record)
+                existing_paths.add(record.image.path)
         ignored_count += scan.ignored_dir_count
 
     return CSVStudioIndex(
@@ -167,6 +179,7 @@ def build_csv_studio_index(
         csv_roots=csv_roots,
         datasets=datasets,
         records=records,
+        plot_sets=plot_sets,
         ignored_dir_count=ignored_count,
         imported_artifacts=imported_artifacts,
     )
@@ -264,12 +277,45 @@ def import_artifact_references(folder: Path | str) -> ArtifactImportResult:
     )
 
 
+def _plot_set_records(project_root: Path, plot_sets: list[PlotSetRecord]) -> list[PlotRecord]:
+    records: list[PlotRecord] = []
+    for plot_set in plot_sets:
+        csv_path = plot_set.csv_files[0] if plot_set.csv_files else None
+        csv = _discovered_file(csv_path, project_root, FileKind.CSV) if csv_path is not None else None
+        for figure_path in plot_set.figure_files:
+            if figure_path.suffix.lower() not in {".png", ".svg"}:
+                continue
+            image = _discovered_file(figure_path, project_root, FileKind.IMAGE)
+            records.append(
+                PlotRecord(
+                    plot_id=_plot_id(image.relative_path),
+                    image=image,
+                    csv=csv,
+                    raw_csv=csv,
+                    plot_csv=csv,
+                    association_confidence=AssociationConfidence.EXACT
+                    if csv is not None
+                    else AssociationConfidence.NONE,
+                    association_reason="Plot set sidecar" if plot_set.editable else "Plot set folder",
+                    redraw=plot_set.redraw,
+                    mode=PlotMode.RECIPE if plot_set.editable else PlotMode.STATIC,
+                    source_dataset_id=_dataset_id(csv.relative_path) if csv is not None else None,
+                    owned_by_mplgallery=False,
+                    visibility_role="reference",
+                    metadata_files=[plot_set.mpl_yaml_path] if plot_set.mpl_yaml_path is not None else [],
+                )
+            )
+    return records
+
+
 def _architecture_result_artifact_records(project_root: Path) -> list[PlotRecord]:
     records: list[PlotRecord] = []
     manifest_records = _manifest_records_by_absolute_plot(project_root)
     for figures_dir in _architecture_result_figure_dirs(project_root):
         for path in sorted(figures_dir.rglob("*"), key=lambda item: item.relative_to(project_root).as_posix().lower()):
             if not path.is_file() or path.suffix.lower() not in {".png", ".svg"}:
+                continue
+            if "mplgallery" in {part.lower() for part in path.relative_to(figures_dir).parts[:-1]}:
                 continue
             image = _discovered_file(path, project_root, FileKind.IMAGE)
             manifest_match = manifest_records.get(path.resolve())
@@ -335,8 +381,11 @@ def _architecture_result_figure_dirs(project_root: Path) -> list[Path]:
 
 def _is_reference_artifact_path(relative_path: Path) -> bool:
     parts = tuple(part.lower() for part in relative_path.parts)
-    if "_build" in parts or "runs" in parts:
+    if ".mplgallery" in parts or "_build" in parts or "runs" in parts:
         return False
+    for index in range(0, max(0, len(parts) - len(RESULT_FIGURE_PARTS))):
+        if parts[index : index + len(RESULT_FIGURE_PARTS) + 1] == RESULT_FIGURE_PARTS + ("mplgallery",):
+            return False
     if len(parts) >= 3 and parts[-3:-1] == ("results", "runs"):
         return False
     return True
@@ -679,12 +728,12 @@ def _draft_figure_path(
 
 def _draft_figures_dir(csv_root: Path, project_root: Path) -> Path:
     if _path_has_suffix_parts(csv_root, project_root, RESULT_TABLE_PARTS):
-        return csv_root.parent / "figures" / "mplgallery"
+        return csv_root.parent / "figures"
     if csv_root.name.lower() == "plots":
-        return csv_root / "mplgallery"
+        return csv_root
     if csv_root.name.lower() == "data":
-        return csv_root.parent / "results" / "final" / "figures" / "mplgallery"
-    return project_root / "results" / "final" / "figures" / "mplgallery"
+        return csv_root.parent / "results" / "final" / "figures"
+    return project_root / "results" / "final" / "figures"
 
 
 def _relative_path_between(path: Path, root: Path) -> Path:

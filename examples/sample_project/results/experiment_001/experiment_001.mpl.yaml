@@ -1,0 +1,42 @@
+version: 1
+plot_id: experiment_001
+title: Experiment 001 Conversion
+files:
+  figures:
+  - experiment_001.png
+  data:
+  - experiment_001.csv
+matplotlib:
+  kind: line
+  x: time_s
+  y: []
+  title: Experiment 001 Conversion
+  xlabel: Elapsed time (s)
+  ylabel: Conversion
+  xscale: linear
+  yscale: linear
+  xlim:
+  - 0.0
+  - 10.0
+  ylim:
+  - 0.0
+  - 1.05
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150
+  series:
+  - y: conversion
+    label: Model conversion
+    color: '#1f77b4'
+    linewidth: 1.6
+    linestyle: '-'
+    marker: o
+    alpha: 0.85
+  - y: fit
+    label: Reference fit
+    color: '#c44e52'
+    linewidth: 2.0
+    linestyle: --
+    alpha: 1.0

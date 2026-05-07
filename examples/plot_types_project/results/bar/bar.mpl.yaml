@@ -1,0 +1,16 @@
+version: 1
+plot_id: bar
+title: Bar Plot
+files:
+  figures:
+  - bar.svg
+  data:
+  - bar.csv
+matplotlib:
+  kind: bar
+  title: Bar Plot
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150

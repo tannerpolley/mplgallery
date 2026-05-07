@@ -5,10 +5,12 @@ Example analysis group with bar and histogram plots.
 Layout:
 
 ```text
-data/raw/
-data/plot_ready/
-plots/
-scripts/generate_data.py
-scripts/render_plots.py
-.mplgallery/manifest.yaml
+results/category_counts/
+  category_counts.csv
+  category_counts.png
+  category_counts.mpl.yaml
+results/residual_distribution/
+  residual_distribution.csv
+  residual_distribution.svg
+  residual_distribution.mpl.yaml
 ```

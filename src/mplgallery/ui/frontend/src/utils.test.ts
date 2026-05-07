@@ -66,12 +66,14 @@ const files: FileItem[] = [
 ];
 
 describe("component utilities", () => {
-  it("builds and compresses a unified file tree from file paths", () => {
+  it("builds an uncompressed unified file tree and marks pass-through folders", () => {
     const tree = buildTree(files, "mplgallery");
     expect(tree.count).toBe(2);
     expect(tree.label).toBe("mplgallery");
-    expect(tree.children.map((child) => child.label)).toEqual(["data/processed", "plots"]);
-    expect(tree.children[0].files.map((item) => item.name)).toEqual(["alpha.csv"]);
+    expect(tree.children.map((child) => child.label)).toEqual(["data", "plots"]);
+    expect(tree.children[0].autoExpand).toBe(true);
+    expect(tree.children[0].children[0].label).toBe("processed");
+    expect(tree.children[0].children[0].files.map((item) => item.name)).toEqual(["alpha.csv"]);
   });
 
   it("filters by checked plot ids and search text", () => {
@@ -101,7 +103,7 @@ describe("component utilities", () => {
     expect(emptyGalleryMessage(records, "missing", plotIdSet(records), false)).toBe(
       "No plots match this search.",
     );
-    expect(emptyGalleryMessage(records, "", new Set(), true)).toBe("Select a CSV or check plots to build a gallery.");
+    expect(emptyGalleryMessage(records, "", new Set(), true)).toBe("Select plot sets from Files to build a gallery.");
   });
 
   it("normalizes metadata while preserving style choices", () => {

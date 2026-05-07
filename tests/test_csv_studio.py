@@ -121,7 +121,7 @@ def test_draft_generation_writes_recipe_script_plot_ready_and_cache_without_touc
     assert record.raw_csv is not None
     assert record.redraw is not None
     assert record.mode.value == "recipe"
-    assert record.image.relative_path.as_posix() == "results/final/figures/mplgallery/experiment.svg"
+    assert record.image.relative_path.as_posix() == "results/final/figures/experiment.svg"
     assert record.owned_by_mplgallery is True
     assert record.visibility_role == "draft"
     assert record.source_dataset_id == "data__experiment"
@@ -138,7 +138,7 @@ def test_draft_generation_writes_recipe_script_plot_ready_and_cache_without_touc
     recipe = yaml.safe_load(record.recipe_path.read_text(encoding="utf-8"))
     assert recipe["source_csv_path"] == "experiment.csv"
     assert recipe["plot_ready_path"].startswith(".mplgallery/plot_ready/")
-    assert recipe["cache_path"] == "../results/final/figures/mplgallery/experiment.svg"
+    assert recipe["cache_path"] == "../results/final/figures/experiment.svg"
     assert recipe["draft_engine"] == "pandas"
     assert recipe["prep"]["selected_columns"] == ["time", "signal", "fit"]
     assert recipe["redraw"]["x"] == "time"
@@ -147,7 +147,7 @@ def test_draft_generation_writes_recipe_script_plot_ready_and_cache_without_touc
     script_text = script_path.read_text(encoding="utf-8")
     assert "frame.plot(" in script_text
     manifest = yaml.safe_load((csv_root / ".mplgallery" / "manifest.yaml").read_text(encoding="utf-8"))
-    assert manifest["records"][0]["plot_path"] == "../results/final/figures/mplgallery/experiment.svg"
+    assert manifest["records"][0]["plot_path"] == "../results/final/figures/experiment.svg"
 
 
 def test_draft_generation_for_analysis_data_writes_to_analysis_result_figures(tmp_path: Path) -> None:
@@ -157,7 +157,7 @@ def test_draft_generation_for_analysis_data_writes_to_analysis_result_figures(tm
     result = draft_csv_root(csv_root, project_root=tmp_path)
 
     assert [record.image.relative_path.as_posix() for record in result.records] == [
-        "analyses/study/results/final/figures/mplgallery/processed_response.svg"
+        "analyses/study/results/final/figures/processed_response.svg"
     ]
     assert not any(".mplgallery/cache" in record.image.relative_path.as_posix() for record in result.records)
 
@@ -171,7 +171,7 @@ def test_plots_folder_csvs_are_drafted_near_reference_artifacts(tmp_path: Path) 
 
     assert [root.relative_path.as_posix() for root in roots] == ["plots"]
     assert [record.image.relative_path.as_posix() for record in result.records] == [
-        "plots/mplgallery/line.svg"
+        "plots/line.svg"
     ]
 
 
@@ -187,12 +187,34 @@ def test_csv_studio_index_links_existing_drafts_without_exposing_cache(tmp_path:
     warm_index = build_csv_studio_index(tmp_path, ensure_drafts=False)
 
     assert [record.image.relative_path.as_posix() for record in warm_index.records] == [
-        "analyses/study/results/final/figures/mplgallery/processed_response.svg"
+        "analyses/study/results/final/figures/processed_response.svg"
     ]
     assert warm_index.records[0].owned_by_mplgallery is True
     assert warm_index.records[0].visibility_role == "draft"
     assert warm_index.datasets[0].associated_plot_id == warm_index.records[0].plot_id
     assert not any(".mplgallery/cache" in record.image.relative_path.as_posix() for record in warm_index.records)
+
+
+def test_csv_studio_index_does_not_expose_legacy_mplgallery_figure_folders(tmp_path: Path) -> None:
+    write(tmp_path / "analyses" / "study" / "data" / "processed" / "response.csv", "time,response\n0,1\n")
+    write(tmp_path / "analyses" / "study" / "results" / "final" / "figures" / "response.svg", "<svg></svg>")
+    write(
+        tmp_path
+        / "analyses"
+        / "study"
+        / "results"
+        / "final"
+        / "figures"
+        / "mplgallery"
+        / "stale_generated.svg",
+        "<svg></svg>",
+    )
+
+    index = build_csv_studio_index(tmp_path, ensure_drafts=False)
+
+    paths = [record.image.relative_path.as_posix() for record in index.records]
+    assert "analyses/study/results/final/figures/response.svg" in paths
+    assert not any("/figures/mplgallery/" in path for path in paths)
 
 
 def test_streamlit_index_load_does_not_auto_generate_drafts(tmp_path: Path) -> None:
@@ -222,6 +244,7 @@ def test_component_payload_includes_dataset_and_owned_plot_metadata(tmp_path: Pa
     assert payload["selectedPlotId"] is None
     assert payload["datasets"][0]["id"] == "data__response"
     assert payload["datasets"][0]["associatedPlotId"] == index.records[0].plot_id
+    assert payload["datasets"][0]["associatedPlotIds"] == [index.records[0].plot_id]
     assert payload["datasets"][0]["previewColumns"] == ["time", "response"]
     assert payload["datasets"][0]["previewRows"][0] == {"time": 0, "response": 1}
     assert payload["datasets"][0]["previewTruncated"] is False
@@ -229,6 +252,10 @@ def test_component_payload_includes_dataset_and_owned_plot_metadata(tmp_path: Pa
     assert payload["records"][0]["sourceDatasetId"] == "data__response"
     assert payload["records"][0]["ownedByMplgallery"] is True
     assert payload["records"][0]["visibilityRole"] == "draft"
+    assert payload["records"][0]["previewColumns"] == ["time", "response"]
+    assert payload["records"][0]["previewRows"][0] == {"time": 0, "response": 1}
+    assert payload["records"][0]["previewTruncated"] is False
+    assert payload["records"][0]["previewError"] is None
 
 
 def test_component_payload_limits_dataset_preview_rows_and_reports_truncation(tmp_path: Path) -> None:
@@ -482,7 +509,7 @@ def test_scan_cli_json_reports_csv_studio_roots_without_default_artifact_records
     )
     payload = json.loads(completed.stdout)
 
-    assert payload["mode"] == "csv-studio"
+    assert payload["mode"] == "plot-set-manager"
     assert [root["relative_path"] for root in payload["csv_roots"]] == ["data"]
     assert payload["plots_discovered"] == 1
     assert payload["artifact_records"] == 1

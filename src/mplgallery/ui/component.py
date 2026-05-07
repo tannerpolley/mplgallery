@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import html
 import os
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal
 
@@ -74,14 +75,25 @@ class ComponentEvent(BaseModel):
         "draft_dataset",
         "draft_dataset_with_preferences",
         "draft_checked_datasets",
+        "select_folder",
+        "toggle_plot_set_checked",
+        "select_plot_set",
+        "set_preferred_attachment_view",
+        "toggle_show_ungrouped",
+        "refresh_index",
         "browse_project_root",
         "change_project_root",
         "reset_project_root",
         "forget_recent_root",
     ]
     plot_id: str | None = None
+    plot_set_id: str | None = None
     dataset_id: str | None = None
     dataset_ids: list[str] = Field(default_factory=list)
+    folder_path: str | None = None
+    attachment_id: str | None = None
+    checked: bool | None = None
+    show: bool | None = None
     root_path: str | None = None
     redraw: RedrawMetadata | None = None
     output_format: str | None = None
@@ -117,6 +129,12 @@ def build_component_payload(
     root_error: str | None = None,
     show_root_chooser: bool = False,
 ) -> dict[str, Any]:
+    associated_plot_ids = _associated_plot_ids_by_dataset(records)
+    checked_plot_set_ids = set(st.session_state.get("mplgallery_checked_plot_set_ids", []))
+    selected_folder = str(st.session_state.get("mplgallery_selected_folder_path", ".") or ".")
+    plot_sets = _plot_set_payloads(records, datasets or [], checked_plot_set_ids=checked_plot_set_ids)
+    folder_view = _folder_view_payload(plot_sets, project_root, selected_folder)
+    files_view = _files_view_payload(plot_sets)
     return {
         "projectRoot": str(project_root),
         "rootContext": {
@@ -127,7 +145,13 @@ def build_component_payload(
             "showRootChooser": show_root_chooser,
         },
         "selectedPlotId": selected_plot_id,
-        "datasets": [_dataset_payload(dataset) for dataset in datasets or []],
+        "datasets": [
+            _dataset_payload(dataset, associated_plot_ids.get(dataset.dataset_id, []))
+            for dataset in datasets or []
+        ],
+        "plotSets": plot_sets,
+        "folderView": folder_view,
+        "filesView": files_view,
         "records": [_record_payload(record) for record in records],
         "files": _file_item_payloads(project_root, records, datasets or []),
         "options": {
@@ -160,10 +184,12 @@ def process_component_event(
 
     st.session_state["mplgallery_last_event_id"] = event.id
     if event.type == "change_project_root":
+        _clear_plot_set_ui_state()
         _change_project_root(event.root_path or "")
         return True
 
     if event.type == "reset_project_root":
+        _clear_plot_set_ui_state()
         _reset_project_root(launch_root or project_root)
         return True
 
@@ -173,6 +199,27 @@ def process_component_event(
 
     if event.type == "forget_recent_root" and event.root_path:
         _forget_recent_root(event.root_path)
+        return True
+
+    if event.type == "refresh_index":
+        return True
+
+    if event.type == "select_folder" and event.folder_path:
+        st.session_state["mplgallery_selected_folder_path"] = event.folder_path
+        return True
+
+    if event.type == "toggle_plot_set_checked" and event.plot_set_id:
+        checked = set(st.session_state.get("mplgallery_checked_plot_set_ids", []))
+        if event.checked:
+            checked.add(event.plot_set_id)
+        else:
+            checked.discard(event.plot_set_id)
+        st.session_state["mplgallery_checked_plot_set_ids"] = sorted(checked)
+        st.session_state["mplgallery_selected_plot_set_id"] = event.plot_set_id
+        return True
+
+    if event.type == "select_plot_set" and event.plot_set_id:
+        st.session_state["mplgallery_selected_plot_set_id"] = event.plot_set_id
         return True
 
     if event.type == "save_redraw_metadata" and event.plot_id and event.redraw:
@@ -232,6 +279,15 @@ def selected_plot_id_from_state_or_query(records: list[PlotRecord]) -> str | Non
     return None
 
 
+def _clear_plot_set_ui_state() -> None:
+    for key in (
+        "mplgallery_checked_plot_set_ids",
+        "mplgallery_selected_plot_set_id",
+        "mplgallery_selected_folder_path",
+    ):
+        st.session_state.pop(key, None)
+
+
 def component_errors() -> dict[str, str]:
     errors = st.session_state.get("mplgallery_component_errors", {})
     return errors if isinstance(errors, dict) else {}
@@ -240,6 +296,7 @@ def component_errors() -> dict[str, str]:
 def _record_payload(record: PlotRecord) -> dict[str, Any]:
     source_csv = record.plot_csv or record.csv
     redraw = record.redraw or RedrawMetadata()
+    preview_columns, preview_rows, preview_truncated, preview_error = _record_preview(record)
     return {
         "id": record.plot_id,
         "name": record.image.relative_path.name,
@@ -261,6 +318,10 @@ def _record_payload(record: PlotRecord) -> dict[str, Any]:
         "renderError": record.cache.render_error if record.cache else None,
         "csvPreview": _csv_preview(record),
         "csvColumns": _csv_columns(record),
+        "previewColumns": preview_columns,
+        "previewRows": preview_rows,
+        "previewTruncated": preview_truncated,
+        "previewError": preview_error,
         "axisDefaults": _axis_defaults(record),
         "editable": bool(record.redraw and source_csv),
         "redraw": redraw.model_dump(mode="json", exclude_none=True),
@@ -269,8 +330,9 @@ def _record_payload(record: PlotRecord) -> dict[str, Any]:
     }
 
 
-def _dataset_payload(dataset: DatasetRecord) -> dict[str, Any]:
+def _dataset_payload(dataset: DatasetRecord, associated_plot_ids: list[str] | None = None) -> dict[str, Any]:
     preview_columns, preview_rows, preview_truncated, preview_error = _dataset_preview(dataset)
+    plot_ids = list(dict.fromkeys([*(associated_plot_ids or []), *([dataset.associated_plot_id] if dataset.associated_plot_id else [])]))
     return {
         "id": dataset.dataset_id,
         "displayName": dataset.display_name,
@@ -279,6 +341,7 @@ def _dataset_payload(dataset: DatasetRecord) -> dict[str, Any]:
         "csvRootPath": dataset.csv_root_relative_path.as_posix(),
         "draftStatus": dataset.draft_status,
         "associatedPlotId": dataset.associated_plot_id,
+        "associatedPlotIds": plot_ids,
         "rowCountSampled": dataset.row_count_sampled,
         "columns": dataset.columns,
         "numericColumns": dataset.numeric_columns,
@@ -290,13 +353,281 @@ def _dataset_payload(dataset: DatasetRecord) -> dict[str, Any]:
     }
 
 
+def _associated_plot_ids_by_dataset(records: list[PlotRecord]) -> dict[str, list[str]]:
+    linked: dict[str, list[str]] = {}
+    for record in records:
+        if not record.source_dataset_id:
+            continue
+        linked.setdefault(record.source_dataset_id, []).append(record.plot_id)
+    return linked
+
+
+def _plot_set_payloads(
+    records: list[PlotRecord],
+    datasets: list[DatasetRecord],
+    *,
+    checked_plot_set_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    checked_plot_set_ids = checked_plot_set_ids or set()
+    dataset_by_id = {dataset.dataset_id: dataset for dataset in datasets}
+    dataset_by_relative_path = {dataset.relative_path.as_posix(): dataset for dataset in datasets}
+    records_by_dataset: dict[str, list[PlotRecord]] = defaultdict(list)
+    standalone_records: list[PlotRecord] = []
+
+    for record in records:
+        dataset_id = record.source_dataset_id
+        if dataset_id is None:
+            source = record.plot_csv or record.csv
+            if source is not None:
+                matched = dataset_by_relative_path.get(source.relative_path.as_posix())
+                if matched is not None:
+                    dataset_id = matched.dataset_id
+        if dataset_id is not None and dataset_id in dataset_by_id:
+            records_by_dataset[dataset_id].append(record)
+        else:
+            standalone_records.append(record)
+
+    plot_sets: list[dict[str, Any]] = []
+    for dataset in datasets:
+        linked_records = sorted(
+            records_by_dataset.get(dataset.dataset_id, []),
+            key=lambda record: record.image.relative_path.as_posix().lower(),
+        )
+        attachments: list[dict[str, Any]] = [
+            {
+                "id": f"{dataset.dataset_id}:csv",
+                "type": "csv",
+                "displayName": dataset.relative_path.name,
+                "sourcePath": dataset.relative_path.as_posix(),
+                "datasetId": dataset.dataset_id,
+                "plotId": linked_records[0].plot_id if linked_records else None,
+            }
+        ]
+        _extend_plot_set_attachments(attachments, linked_records)
+        preferred = _preferred_figure_attachment(attachments)
+        plot_sets.append(
+            {
+                "plotSetId": dataset.dataset_id,
+                "title": _plot_set_title(dataset.display_name, linked_records),
+                "folderPath": dataset.relative_path.parent.as_posix()
+                if dataset.relative_path.parent != Path(".")
+                else ".",
+                "attachments": attachments,
+                "preferredFigure": preferred,
+                "editable": bool(any(_record_is_editable(record) for record in linked_records)),
+                "checked": dataset.dataset_id in checked_plot_set_ids,
+                "renderStatus": _render_status_for_records(linked_records, preferred is not None),
+            }
+        )
+
+    standalone_groups: dict[tuple[str, str], list[PlotRecord]] = defaultdict(list)
+    for record in standalone_records:
+        parent = record.image.relative_path.parent.as_posix()
+        stem = record.image.relative_path.stem.lower()
+        standalone_groups[(parent, stem)].append(record)
+
+    for (parent, stem), grouped_records in sorted(
+        standalone_groups.items(),
+        key=lambda item: f"{item[0][0]}/{item[0][1]}",
+    ):
+        sorted_records = sorted(
+            grouped_records,
+            key=lambda record: record.image.relative_path.as_posix().lower(),
+        )
+        attachments: list[dict[str, Any]] = []
+        _extend_plot_set_attachments(attachments, sorted_records)
+        csv_source = sorted_records[0].plot_csv or sorted_records[0].csv
+        if csv_source is not None:
+            attachments.insert(
+                0,
+                {
+                    "id": f"standalone:{parent}:{stem}:csv",
+                    "type": "csv",
+                    "displayName": csv_source.relative_path.name,
+                    "sourcePath": csv_source.relative_path.as_posix(),
+                    "datasetId": None,
+                    "plotId": sorted_records[0].plot_id,
+                },
+            )
+        preferred = _preferred_figure_attachment(attachments)
+        title = _plot_set_title(sorted_records[0].image.relative_path.stem, sorted_records)
+        plot_set_id = f"plotset::{parent}::{stem}".replace("/", "__")
+        plot_sets.append(
+            {
+                "plotSetId": plot_set_id,
+                "title": title,
+                "folderPath": parent if parent else ".",
+                "attachments": attachments,
+                "preferredFigure": preferred,
+                "editable": bool(any(_record_is_editable(record) for record in sorted_records)),
+                "checked": plot_set_id in checked_plot_set_ids,
+                "renderStatus": _render_status_for_records(sorted_records, preferred is not None),
+            }
+        )
+
+    return sorted(plot_sets, key=lambda item: item["title"].lower())
+
+
+def _record_is_editable(record: PlotRecord) -> bool:
+    return bool(record.redraw and (record.plot_csv or record.csv))
+
+
+def _plot_set_title(fallback: str, records: list[PlotRecord]) -> str:
+    for record in records:
+        redraw = record.redraw
+        if redraw and redraw.title:
+            return redraw.title
+    return fallback
+
+
+def _extend_plot_set_attachments(attachments: list[dict[str, Any]], records: list[PlotRecord]) -> None:
+    seen_paths = {str(attachment["sourcePath"]) for attachment in attachments}
+    for record in records:
+        image_path = record.image.relative_path.as_posix()
+        if image_path not in seen_paths:
+            attachments.append(
+                {
+                    "id": record.plot_id,
+                    "type": record.image.suffix.lower().removeprefix("."),
+                    "displayName": record.image.relative_path.name,
+                    "sourcePath": image_path,
+                    "datasetId": record.source_dataset_id,
+                    "plotId": record.plot_id,
+                }
+            )
+            seen_paths.add(image_path)
+        for metadata_path in record.metadata_files:
+            if metadata_path.suffix.lower() not in {".yaml", ".yml"}:
+                continue
+            relative = metadata_path.as_posix()
+            if relative in seen_paths:
+                continue
+            attachment_type = "mpl_yaml" if metadata_path.name.endswith(".mpl.yaml") else "other"
+            attachments.append(
+                {
+                    "id": f"{record.plot_id}:{metadata_path.name}",
+                    "type": attachment_type,
+                    "displayName": metadata_path.name,
+                    "sourcePath": relative,
+                    "datasetId": record.source_dataset_id,
+                    "plotId": record.plot_id,
+                }
+            )
+            seen_paths.add(relative)
+
+
+def _preferred_figure_attachment(attachments: list[dict[str, Any]]) -> dict[str, Any] | None:
+    figures = [attachment for attachment in attachments if attachment["type"] in {"svg", "png"}]
+    if not figures:
+        return None
+    svg = next((attachment for attachment in figures if attachment["type"] == "svg"), None)
+    if svg is not None:
+        return svg
+    return figures[0]
+
+
+def _render_status_for_records(records: list[PlotRecord], has_figure: bool) -> str:
+    if any(record.cache and record.cache.render_error for record in records):
+        return "error"
+    if has_figure:
+        return "ready"
+    return "missing_figure"
+
+
+def _folder_view_payload(
+    plot_sets: list[dict[str, Any]],
+    project_root: Path,
+    selected_folder: str = ".",
+) -> dict[str, Any]:
+    root_label = project_root.name or "project"
+    paths = {"."}
+    for plot_set in plot_sets:
+        folder = str(plot_set.get("folderPath") or ".")
+        parts = [part for part in folder.split("/") if part and part != "."]
+        current = ""
+        paths.add(".")
+        for part in parts:
+            current = f"{current}/{part}" if current else part
+            paths.add(current)
+    nodes: list[dict[str, Any]] = []
+    for path in sorted(paths, key=lambda value: (value.count("/"), value.lower())):
+        if path == ".":
+            label = root_label
+            parent = None
+            depth = 0
+        else:
+            label = path.split("/")[-1]
+            parent = path.rsplit("/", 1)[0] if "/" in path else "."
+            depth = path.count("/") + 1
+        child_count = sum(
+            1
+            for candidate in paths
+            if candidate != path and (candidate.rsplit("/", 1)[0] if "/" in candidate else ".") == path
+        )
+        plot_set_count = sum(1 for plot_set in plot_sets if str(plot_set.get("folderPath") or ".") == path)
+        nodes.append(
+            {
+                "id": path,
+                "path": path,
+                "label": label,
+                "parentId": parent,
+                "depth": depth,
+                "childCount": child_count,
+                "plotSetCount": plot_set_count,
+                "autoFlatten": child_count == 1 and plot_set_count == 0 and path != ".",
+            }
+        )
+    valid_paths = {str(node["path"]) for node in nodes}
+    default_selected = selected_folder if selected_folder in valid_paths else "."
+    return {"nodes": nodes, "rootId": ".", "defaultSelectedPath": default_selected}
+
+
+def _files_view_payload(plot_sets: list[dict[str, Any]]) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for plot_set in plot_sets:
+        attachments = plot_set.get("attachments", [])
+        attachment_types = [str(attachment.get("type")) for attachment in attachments]
+        rows.append(
+            {
+                "plotSetId": plot_set["plotSetId"],
+                "title": plot_set["title"],
+                "folderPath": plot_set["folderPath"],
+                "attachmentTypes": attachment_types,
+                "figureCount": sum(1 for item in attachment_types if item in {"svg", "png"}),
+                "csvCount": sum(1 for item in attachment_types if item == "csv"),
+                "editable": plot_set.get("editable", False),
+                "renderStatus": plot_set.get("renderStatus", "ready"),
+            }
+        )
+    return {"rows": rows}
+
+
 def _dataset_preview(
     dataset: DatasetRecord,
     *,
     limit: int = 200,
 ) -> tuple[list[str], list[dict[str, Any]], bool, str | None]:
+    return _tabular_preview(dataset.path, limit=limit)
+
+
+def _record_preview(
+    record: PlotRecord,
+    *,
+    limit: int = 200,
+) -> tuple[list[str], list[dict[str, Any]], bool, str | None]:
+    source_csv = record.plot_csv or record.csv
+    if source_csv is None:
+        return [], [], False, None
+    return _tabular_preview(source_csv.path, limit=limit)
+
+
+def _tabular_preview(
+    csv_path: Path,
+    *,
+    limit: int = 200,
+) -> tuple[list[str], list[dict[str, Any]], bool, str | None]:
     try:
-        frame = pd.read_csv(dataset.path, nrows=limit + 1)
+        frame = pd.read_csv(csv_path, nrows=limit + 1)
     except Exception as exc:
         return [], [], False, str(exc)
     columns = [str(column) for column in frame.columns]

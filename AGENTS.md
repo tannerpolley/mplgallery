@@ -3,22 +3,35 @@
 ## Project Goal
 
 Build `mplgallery`, an installable Python package that provides a local
-Streamlit UI for discovering CSV analysis tables, drafting editable Matplotlib
-plots, browsing cached previews, and managing plot recipes under colocated
-`.mplgallery/` folders.
+Streamlit UI for discovering, grouping, previewing, and lightly editing
+project-owned Matplotlib plot sets.
 
 The primary personal project layout is:
 
 ```text
 analysis_name/
   scripts/
+    generate_results.py
+    render_figures.py
   data/
     input/
     raw/
     processed/
-  out/
-    plots/
-    reports/
+  results/
+    response_curve/
+      response_curve.csv
+      response_curve.svg
+      response_curve.png
+      response_curve.mpl.yaml
+    regression_fit/
+      model_curve.csv
+      literature_points.csv
+      regression_fit.svg
+      regression_fit.mpl.yaml
+  .mplgallery/
+    manifest.yaml
+    cache/
+    indexes/
   config/
 ```
 
@@ -29,28 +42,32 @@ analysis_name/
 - Streamlit is the UI layer.
 - pandas is used for CSV loading, previewing, validation, and summary statistics.
 - Matplotlib is the canonical rendering engine.
-- MPLGallery is only for CSV plotting, plot appearance, and reference artifact browsing; it must not
+- MPLGallery is only for plot-set discovery, grouping, previewing, plot appearance, and reference artifact browsing; it must not
   tune, fit, optimize, or alter scientific/model computations.
 - DVC is the regeneration/dependency-tracking layer.
 - MLflow is the run/artifact/history layer.
-- Full-feature v1 expects a plot-ready CSV per plot, with an optional raw/model
-  CSV tracked as provenance only.
-- Default v1 behavior is CSV-first. PNG/SVG artifact discovery is opt-in
-  reference/import mode.
-- Default CSV roots are folders named `data`, `out`, `outputs`, `result`, or
-  `results`, plus explicitly targeted folders.
-- MPLGallery-owned files for a CSV root live under that root's `.mplgallery/`
-  folder: `manifest.yaml`, `recipes/`, `scripts/`, `plot_ready/`, and `cache/`.
-- `out/plots` is the expected location for generated PNG/SVG reference artifacts,
-  but those artifacts remain opt-in imports rather than default scan results.
+- Full-feature v1 expects one plot-set folder per figure or figure family under
+  `results/<plot_set>/`.
+- Default v1 discovery focuses on `results/**` plot sets. Old CSV-first or
+  project-wide discovery should remain explicit compatibility behavior.
+- A plot set may contain CSV, SVG, PNG, PDF, `.mpl.yaml`, and provenance files.
+- Every plotted series, including literature/reference points, should be
+  snapshotted inside the plot set.
+- Project scripts and coding agents own scientific computation and final figure
+  generation. MPLGallery groups, previews, edits sidecar metadata, and may run
+  only explicit render commands declared in `.mpl.yaml`.
+- `.mplgallery/manifest.yaml` is project-local and hidden from normal browsing;
+  it stores grouping overrides, app UI metadata, cache/index fingerprints, and
+  scan state.
 - Legacy `csv_path` may remain as a compatibility alias for `plot_csv_path`.
 - Live browsing and cached redraws must not overwrite generated plot artifacts.
-- Live metadata edits persist to `.mplgallery/manifest.yaml`, not to CSV files.
+- Live metadata edits for editable plot sets persist to `<plot_set>.mpl.yaml`,
+  not to CSV files.
 - Any explicit future overwrite action must create a backup first.
-- `.mplgallery/cache` is the default per-CSV-root cache for redraw images and
-  fingerprints.
+- `.mplgallery/cache` is for app cache/index state and must not be surfaced as
+  project plot output.
 - Static gallery mode must be read-only.
-- True Matplotlib-level editing requires recipe metadata.
+- True Matplotlib-level editing requires `.mpl.yaml` sidecar metadata.
 
 ## Engineering Rules
 
@@ -65,8 +82,9 @@ analysis_name/
 - Do not modify target analysis projects except through explicit overwrite or
   regeneration actions.
 - Do not overwrite any plot without first creating a backup.
-- Do not mutate source CSVs; use `.mplgallery/plot_ready` CSVs as render
-  sources when MPLGallery needs a sampled or derived table.
+- Do not mutate source CSVs or plot-set CSV snapshots.
+- Do not infer or run arbitrary Python render scripts. Only run commands
+  explicitly declared in `.mpl.yaml`.
 - Do not add model tuning, fitting, parameter optimization, or data-generation
   controls to the UI.
 - Keep the first user-facing UI closer to a file explorer than an analytics

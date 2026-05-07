@@ -1,0 +1,16 @@
+version: 1
+plot_id: scatter
+title: Scatter Plot
+files:
+  figures:
+  - scatter.png
+  data:
+  - scatter.csv
+matplotlib:
+  kind: scatter
+  title: Scatter Plot
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150

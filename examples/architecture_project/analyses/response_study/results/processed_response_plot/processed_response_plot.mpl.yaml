@@ -1,0 +1,16 @@
+version: 1
+plot_id: processed_response_plot
+title: Processed Response Plot
+files:
+  figures:
+  - processed_response_plot.svg
+  data:
+  - processed_response_plot.csv
+matplotlib:
+  kind: line
+  title: Processed Response Plot
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150

@@ -68,6 +68,10 @@ export type PlotRecord = {
   renderError?: string | null;
   csvPreview?: string | null;
   csvColumns: string[];
+  previewColumns?: string[];
+  previewRows?: Array<Record<string, string | number | boolean | null>>;
+  previewTruncated?: boolean;
+  previewError?: string | null;
   editable: boolean;
   redraw: RedrawMetadata;
   series: SeriesStyle[];
@@ -82,6 +86,7 @@ export type DatasetRecord = {
   csvRootPath: string;
   draftStatus: string;
   associatedPlotId?: string | null;
+  associatedPlotIds?: string[];
   rowCountSampled: number;
   columns: string[];
   numericColumns: string[];
@@ -106,6 +111,58 @@ export type FileItem = {
   datasetId?: string | null;
 };
 
+export type PlotSetAttachment = {
+  id: string;
+  type: "csv" | "svg" | "png" | "mpl_yaml" | "other" | string;
+  displayName: string;
+  sourcePath: string;
+  plotId?: string | null;
+  datasetId?: string | null;
+};
+
+export type PlotSetEntity = {
+  plotSetId: string;
+  title: string;
+  folderPath: string;
+  attachments: PlotSetAttachment[];
+  preferredFigure?: PlotSetAttachment | null;
+  editable: boolean;
+  checked?: boolean;
+  renderStatus?: string;
+};
+
+export type FolderViewNode = {
+  id: string;
+  path: string;
+  label: string;
+  parentId?: string | null;
+  depth: number;
+  childCount: number;
+  plotSetCount: number;
+  autoFlatten?: boolean;
+};
+
+export type FolderView = {
+  nodes: FolderViewNode[];
+  rootId: string;
+  defaultSelectedPath: string;
+};
+
+export type FilesViewRow = {
+  plotSetId: string;
+  title: string;
+  folderPath: string;
+  attachmentTypes: string[];
+  figureCount: number;
+  csvCount: number;
+  editable: boolean;
+  renderStatus: string;
+};
+
+export type FilesView = {
+  rows: FilesViewRow[];
+};
+
 export type AxisDefaults = {
   x?: [number, number] | null;
   y?: [number, number] | null;
@@ -122,6 +179,9 @@ export type BrowserPayload = {
   rootContext?: RootContext;
   selectedPlotId?: string | null;
   datasets: DatasetRecord[];
+  plotSets?: PlotSetEntity[];
+  folderView?: FolderView;
+  filesView?: FilesView;
   records: PlotRecord[];
   files: FileItem[];
   options: {
@@ -145,6 +205,12 @@ export type ComponentEvent =
   | { id: string; type: "draft_dataset"; dataset_id: string }
   | { id: string; type: "draft_dataset_with_preferences"; dataset_id: string; redraw: RedrawMetadata; output_format: "svg" | "png" }
   | { id: string; type: "draft_checked_datasets"; dataset_ids: string[] }
+  | { id: string; type: "select_folder"; folder_path: string }
+  | { id: string; type: "toggle_plot_set_checked"; plot_set_id: string; checked: boolean }
+  | { id: string; type: "select_plot_set"; plot_set_id: string }
+  | { id: string; type: "set_preferred_attachment_view"; plot_set_id: string; attachment_id: string }
+  | { id: string; type: "toggle_show_ungrouped"; show: boolean }
+  | { id: string; type: "refresh_index" }
   | { id: string; type: "browse_project_root" }
   | { id: string; type: "change_project_root"; root_path: string }
   | { id: string; type: "reset_project_root" }
@@ -162,6 +228,7 @@ export type TreeNode = {
   path: string;
   label: string;
   count: number;
+  autoExpand?: boolean;
   children: TreeNode[];
   files: FileItem[];
 };

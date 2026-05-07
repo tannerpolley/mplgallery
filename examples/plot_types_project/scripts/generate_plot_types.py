@@ -8,18 +8,22 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLOTS = ROOT / "plots"
+
+
+def plot_set_dir(name: str) -> Path:
+    return ROOT / "results" / name
 
 
 def write_csv(name: str, frame: pd.DataFrame) -> Path:
-    path = PLOTS / f"{name}.csv"
+    path = plot_set_dir(name) / f"{name}.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(path, index=False)
     return path
 
 
 def save(fig: plt.Figure, name: str, suffix: str) -> None:
-    path = PLOTS / f"{name}.{suffix}"
+    path = plot_set_dir(name) / f"{name}.{suffix}"
+    path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)

@@ -1,0 +1,37 @@
+version: 1
+plot_id: experiment_002
+title: Experiment 002 Temperature
+files:
+  figures:
+  - experiment_002.svg
+  data:
+  - experiment_002.csv
+matplotlib:
+  kind: line
+  x: time_s
+  y: []
+  title: Experiment 002 Temperature
+  xlabel: Time (s)
+  ylabel: Temperature (C)
+  xscale: linear
+  yscale: linear
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150
+  series:
+  - y: temperature_c
+    label: Model temperature
+    color: '#3a7d44'
+    linewidth: 1.6
+    linestyle: '-'
+    marker: o
+    alpha: 0.9
+  - y: fit
+    label: Reference fit
+    color: '#6b4c9a'
+    linewidth: 2.0
+    linestyle: --
+    marker: ''
+    alpha: 1.0

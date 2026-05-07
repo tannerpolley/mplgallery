@@ -1,0 +1,16 @@
+version: 1
+plot_id: hist
+title: Hist Plot
+files:
+  figures:
+  - hist.png
+  data:
+  - hist.csv
+matplotlib:
+  kind: hist
+  title: Hist Plot
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150

@@ -1,0 +1,16 @@
+version: 1
+plot_id: step
+title: Step Plot
+files:
+  figures:
+  - step.svg
+  data:
+  - step.csv
+matplotlib:
+  kind: step
+  title: Step Plot
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150

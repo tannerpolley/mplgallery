@@ -1,0 +1,35 @@
+version: 1
+plot_id: conversion
+title: Conversion curve
+files:
+  figures:
+  - conversion.png
+  data:
+  - conversion.csv
+matplotlib:
+  kind: line
+  x: elapsed_s
+  title: Conversion curve
+  xlabel: Elapsed time
+  xlabel_unit: $\mathrm{s}$
+  ylabel: Conversion
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150
+  series:
+  - y: conversion
+    label: Model conversion
+    color: '#1f77b4'
+    linewidth: 1.8
+    linestyle: '-'
+    marker: o
+    alpha: 0.95
+  - y: reference
+    label: Reference fit
+    color: '#d62728'
+    linewidth: 1.8
+    linestyle: --
+    marker: ''
+    alpha: 0.9

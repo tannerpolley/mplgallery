@@ -102,7 +102,8 @@ The UI should expose only plot-look controls: titles, labels, limits, scales, gr
 
 ### 2.2 UI Baseline From Prior Handoff
 
-The prior `plot_gallery_package_ui_handoff.md` is the browsing baseline for v1. Preserve these behaviors:
+The current browsing baseline for v1 is now captured in the shipped UI, tests,
+`README.md`, and `AGENTS.md`. Preserve these behaviors:
 
 - file-explorer-style left sidebar;
 - expandable/collapsible folder rows;

@@ -3,9 +3,11 @@ title: Response Study
 status: active
 summary: Small MPLGallery fixture for architecture-standard analysis discovery.
 outputs:
-  - path: results/final/figures/response_curve.svg
-    kind: figure
-  - path: results/final/tables/response_summary.csv
-    kind: table
+  - path: results/response_curve/response_curve.svg
+    kind: plot_set_figure
+  - path: results/response_curve/response_curve.csv
+    kind: plot_set_data
+  - path: results/response_curve/response_curve.mpl.yaml
+    kind: plot_set_style
 runtime:
   quick_seconds: 1

@@ -1,0 +1,28 @@
+version: 1
+plot_id: category_counts
+title: Category counts
+files:
+  figures:
+  - category_counts.png
+  data:
+  - category_counts.csv
+matplotlib:
+  kind: bar
+  x: category
+  y: []
+  title: Category counts
+  xlabel: Category
+  ylabel: Count
+  ylabel_unit: $\mathrm{a.u.}$
+  xscale: linear
+  yscale: linear
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150
+  series:
+  - y: count
+    label: Count
+    color: '#9467bd'
+    alpha: 0.85

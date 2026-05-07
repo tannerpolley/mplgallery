@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 import typer
@@ -15,6 +16,7 @@ from mplgallery.core.studio import (
     import_artifact_references,
     init_csv_root,
 )
+from mplgallery.desktop import launch_desktop_app
 
 app = typer.Typer(help="Browse and manage Matplotlib-generated plot galleries.")
 
@@ -38,8 +40,33 @@ def scan(
         typer.echo(
             json.dumps(
                 {
-                    "mode": "csv-studio",
+                    "mode": "plot-set-manager",
                     "project_root": str(index.project_root),
+                    "plot_sets": [
+                        {
+                            "plot_set_id": plot_set.plot_set_id,
+                            "title": plot_set.title,
+                            "relative_path": plot_set.relative_path.as_posix(),
+                            "csv_files": [
+                                path.relative_to(index.project_root).as_posix()
+                                if path.is_absolute()
+                                else path.as_posix()
+                                for path in plot_set.csv_files
+                            ],
+                            "figure_files": [
+                                path.relative_to(index.project_root).as_posix()
+                                if path.is_absolute()
+                                else path.as_posix()
+                                for path in plot_set.figure_files
+                            ],
+                            "mpl_yaml_path": plot_set.mpl_yaml_path.relative_to(index.project_root).as_posix()
+                            if plot_set.mpl_yaml_path is not None
+                            else None,
+                            "editable": plot_set.editable,
+                            "render_command": plot_set.render_command,
+                        }
+                        for plot_set in index.plot_sets
+                    ],
                     "csv_roots": [
                         {
                             "path": str(root.path),
@@ -66,6 +93,7 @@ def scan(
                         }
                         for dataset in index.datasets
                     ],
+                    "plot_sets_discovered": len(index.plot_sets),
                     "files_discovered": len(index.datasets),
                     "plots_discovered": len(index.records),
                     "plots_matched_to_csv": matched,
@@ -102,7 +130,8 @@ def scan(
         return
 
     typer.echo(f"Project: {index.project_root}")
-    typer.echo("Mode: CSV Plot Studio")
+    typer.echo("Mode: Plot-Set Manager")
+    typer.echo(f"Plot sets: {len(index.plot_sets)}")
     typer.echo(f"CSV roots: {len(index.csv_roots)}")
     typer.echo(f"Datasets: {len(index.datasets)}")
     typer.echo(f"Plots: {len(index.records)} discovered, {matched} matched to CSV")
@@ -132,7 +161,7 @@ def scan(
 def init(
     data_folder: Path = typer.Argument(
         ...,
-        help="CSV root to initialize, usually analyses/<id>/data or analyses/<id>/results/final/tables.",
+        help="CSV root to initialize for compatibility drafting; new workflows prefer results/<plot_set>/ folders.",
     ),
 ) -> None:
     """Create the `.mplgallery` workspace beside a CSV folder without rendering."""
@@ -145,7 +174,7 @@ def init(
 def draft(
     data_folder: Path = typer.Argument(
         ...,
-        help="CSV root to draft, usually analyses/<id>/data or analyses/<id>/results/final/tables.",
+        help="CSV root to draft for compatibility; new workflows prefer project-owned results/<plot_set>/ folders.",
     ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
 ) -> None:
@@ -291,14 +320,65 @@ def run_app(
     )
 
 
+@app.command()
+def desktop(
+    project_root: Path = typer.Argument(Path("."), help="Project directory to open."),
+    port: int | None = typer.Option(None, help="Preferred local port."),
+    choose_root: bool = typer.Option(
+        False,
+        "--choose-root",
+        help="Open with the root chooser emphasized and use the last recent root when available.",
+    ),
+    include_artifacts: bool = typer.Option(
+        True,
+        "--include-artifacts/--csv-only",
+        help="Show PNG/SVG artifacts alongside draftable CSV files.",
+    ),
+    browser: bool = typer.Option(
+        False,
+        "--browser",
+        help="Open the hosted app in the system browser instead of a native desktop window.",
+    ),
+    width: int = typer.Option(1600, help="Initial native window width."),
+    height: int = typer.Option(1000, help="Initial native window height."),
+) -> None:
+    """Launch MPLGallery as a native desktop window on Windows."""
+    resolved_root = project_root.expanduser().resolve()
+    if browser:
+        raise typer.Exit(
+            _run_streamlit_app(
+                resolved_root,
+                port=port,
+                include_artifacts=include_artifacts,
+                choose_root=choose_root,
+                open_browser=True,
+            )
+        )
+    try:
+        return_code = launch_desktop_app(
+            resolved_root,
+            port=port,
+            choose_root=choose_root,
+            include_artifacts=include_artifacts,
+            width=width,
+            height=height,
+        )
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    raise typer.Exit(return_code)
+
+
 def _run_streamlit_app(
     project_root: Path,
     *,
     port: int | None,
     include_artifacts: bool,
     choose_root: bool,
+    open_browser: bool = False,
 ) -> int:
     resolved_root = project_root.expanduser().resolve()
+    chosen_port = 8501 if open_browser and port is None else port
     app_path = Path(__file__).parent / "ui" / "app.py"
     command = [
         sys.executable,
@@ -309,13 +389,15 @@ def _run_streamlit_app(
         "--server.headless=true",
         "--browser.gatherUsageStats=false",
     ]
-    if port is not None:
-        command.append(f"--server.port={port}")
+    if chosen_port is not None:
+        command.append(f"--server.port={chosen_port}")
     command.extend(["--", "--project-root", str(resolved_root)])
     if choose_root:
         command.append("--choose-root")
     if include_artifacts:
         command.append("--include-artifacts")
+    if open_browser:
+        webbrowser.open(f"http://127.0.0.1:{chosen_port}")
     return subprocess.run(command, check=False).returncode
 
 

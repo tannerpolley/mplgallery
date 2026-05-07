@@ -8,7 +8,6 @@ from pathlib import Path
 import streamlit as st
 
 from mplgallery.core.user_settings import (
-    forget_recent_root,
     load_user_settings,
     remember_recent_root,
     save_user_settings,
@@ -23,12 +22,7 @@ from mplgallery.ui.component import (
     render_plot_browser,
     selected_plot_id_from_state_or_query,
 )
-from mplgallery.ui.root_state import (
-    browse_active_root,
-    change_active_root,
-    reset_active_root,
-    resolve_initial_root,
-)
+from mplgallery.ui.root_state import resolve_initial_root
 
 
 def main() -> None:
@@ -87,6 +81,7 @@ def _active_project_root(launch_root: Path, *, choose_root: bool, settings) -> P
 
 
 def _render_host_chrome(*, project_root: Path, launch_root: Path, settings) -> bool:
+    _ = (project_root, launch_root, settings)
     st.markdown(
         """
         <style>
@@ -97,17 +92,32 @@ def _render_host_chrome(*, project_root: Path, launch_root: Path, settings) -> b
             color: #17202f;
             color-scheme: light !important;
         }
-        header[data-testid="stHeader"] { background: transparent; }
+        header[data-testid="stHeader"] { display: none !important; }
         [data-testid="stToolbar"] { display: none !important; }
         .stAppDeployButton { display: none !important; }
         .block-container {
-            padding: 0.25rem 0.7rem 0.8rem;
+            padding: 0 !important;
             max-width: 1920px;
         }
-        h1 {
-            color: #17202f;
-            font-size: 1.35rem !important;
-            margin-bottom: 0 !important;
+        [data-testid="stVerticalBlock"] { gap: 0 !important; }
+        div[data-testid="stButton"] button {
+            background: #ffffff !important;
+            border: 1px solid #c6d0dd !important;
+            color: #17202f !important;
+            border-radius: 0.55rem !important;
+            min-height: 1.9rem !important;
+            padding: 0.18rem 0.62rem !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stButton"] button:hover {
+            border-color: #256f8f !important;
+            color: #256f8f !important;
+            background: #f8fbfd !important;
+        }
+        div[data-testid="stTextInput"] input {
+            background: #ffffff !important;
+            color: #17202f !important;
+            border-color: #c6d0dd !important;
         }
         iframe,
         iframe[title^="mplgallery"],
@@ -129,108 +139,7 @@ def _render_host_chrome(*, project_root: Path, launch_root: Path, settings) -> b
         """,
         unsafe_allow_html=True,
     )
-    title_root_col, action_col, _spacer_col = st.columns([5.8, 1.3, 4.9], vertical_alignment="center")
-    with title_root_col:
-        st.markdown(
-            f"""
-            <div style="line-height:1.1;">
-              <div style="font-size:1.9rem;font-weight:700;color:#17202f;">MPLGallery</div>
-              <div style="font-size:.78rem;color:#6b7483;overflow-wrap:anywhere;line-height:1.3;">
-              <span style="font-weight:600;color:#4f5a6c;">Project root:</span> {project_root}
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with action_col:
-        if st.button(
-            "Change root",
-            key="mplgallery_host_root_toggle",
-            type="secondary",
-            use_container_width=False,
-        ):
-            st.session_state["mplgallery_host_root_open"] = not st.session_state.get(
-                "mplgallery_host_root_open", False
-            )
-    if not st.session_state.get("mplgallery_host_root_open", False):
-        return False
-
-    st.session_state.setdefault("mplgallery_host_root_draft", str(project_root))
-    st.text_input(
-        "Project root",
-        key="mplgallery_host_root_draft",
-        placeholder="Paste a project folder path",
-    )
-    if error := st.session_state.get("mplgallery_root_error"):
-        st.caption(error)
-
-    action_cols = st.columns([1, 1, 1.4], vertical_alignment="center")
-    if action_cols[0].button("Open root", key="mplgallery_host_open_root"):
-        result = change_active_root(st.session_state.get("mplgallery_host_root_draft", ""), settings)
-        return _apply_root_result(result)
-    if action_cols[1].button("Browse...", key="mplgallery_host_browse_root"):
-        result = browse_active_root(settings, project_root)
-        return _apply_root_result(result)
-    if action_cols[2].button("Use launch root", key="mplgallery_host_launch_root"):
-        result = reset_active_root(launch_root, settings)
-        return _apply_root_result(result)
-
-    recent_roots = [root for root in settings.recent_roots if root.resolve() != project_root.resolve()]
-    if recent_roots:
-        st.caption("Recent roots")
-        for index, recent_root in enumerate(recent_roots[:6]):
-            recent_cols = st.columns([7, 2], vertical_alignment="center")
-            if recent_cols[0].button(
-                _short_root_label(recent_root),
-                key=f"mplgallery_recent_root_{index}",
-                help=str(recent_root),
-                use_container_width=True,
-            ):
-                result = change_active_root(str(recent_root), settings)
-                return _apply_root_result(result)
-            if recent_cols[1].button(
-                "Forget",
-                key=f"mplgallery_forget_root_{index}",
-                use_container_width=True,
-            ):
-                fresh = forget_recent_root(settings, recent_root)
-                save_user_settings(fresh)
-                return True
     return False
-
-
-def _apply_root_result(result) -> bool:
-    if result.error:
-        st.session_state["mplgallery_root_error"] = result.error
-        return False
-    if result.active_root is None:
-        return False
-    save_user_settings(result.settings)
-    _set_active_project_root(result.active_root)
-    st.session_state["mplgallery_host_root_draft"] = str(result.active_root)
-    st.session_state["mplgallery_host_root_open"] = False
-    return True
-
-
-def _set_active_project_root(project_root: Path) -> None:
-    st.session_state["mplgallery_active_project_root"] = str(project_root)
-    st.session_state.pop("mplgallery_root_error", None)
-    st.session_state.pop("mplgallery_selected_plot_id", None)
-    st.session_state.pop("mplgallery_component_errors", None)
-    st.session_state.pop("mplgallery_records", None)
-    st.session_state.pop("mplgallery_datasets", None)
-    try:
-        if "plot_id" in st.query_params:
-            del st.query_params["plot_id"]
-    except Exception:
-        pass
-
-
-def _short_root_label(root_path: Path) -> str:
-    parts = root_path.as_posix().split("/")
-    if len(parts) <= 2:
-        return root_path.as_posix()
-    return f".../{'/'.join(parts[-2:])}"
 
 
 def _load_index(project_root: Path, *, include_artifacts: bool = False) -> CSVStudioIndex:

@@ -1,8 +1,8 @@
 # Plot Types Project
 
 This example is the main mixed file-explorer fixture for MPLGallery. The
-`plots/` folder contains PNG/SVG Matplotlib references and draftable CSV
-companions for each supported plot type:
+`results/<plot_set>/` folders contain the plotted CSV snapshot, PNG/SVG
+figure, and `.mpl.yaml` sidecar for each supported plot type:
 
 - line
 - scatter

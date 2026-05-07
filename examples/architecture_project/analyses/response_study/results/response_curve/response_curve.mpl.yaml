@@ -1,0 +1,16 @@
+version: 1
+plot_id: response_curve
+title: Response Curve
+files:
+  figures:
+  - response_curve.svg
+  data:
+  - response_curve.csv
+matplotlib:
+  kind: line
+  title: Response Curve
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150

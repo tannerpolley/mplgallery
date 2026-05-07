@@ -1,0 +1,16 @@
+version: 1
+plot_id: barh
+title: Barh Plot
+files:
+  figures:
+  - barh.svg
+  data:
+  - barh.csv
+matplotlib:
+  kind: barh
+  title: Barh Plot
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150

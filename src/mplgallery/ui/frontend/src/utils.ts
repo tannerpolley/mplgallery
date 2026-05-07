@@ -42,7 +42,7 @@ export function emptyGalleryMessage(
   }
   if (query.trim()) return "No plots match this search.";
   if (checkedPlotIds.size === 0) {
-    return "Select a CSV or check plots to build a gallery.";
+    return "Select plot sets from Files to build a gallery.";
   }
   return "No visible plots for the current filters.";
 }
@@ -73,15 +73,17 @@ export function buildTree(files: FileItem[], rootLabel: string): TreeNode {
       .filter((folder) => !folder.slice(prefix.length).includes("/"))
       .sort()
       .map(makeNode);
-    return compressNode({
+    const directFiles = files
+      .filter((file) => parentFolderForPath(file.path) === path)
+      .sort((left, right) => left.name.localeCompare(right.name));
+    return {
       path,
       label: path === "." ? rootLabel : (path.split("/").pop() ?? path),
       count: folderCounts.get(path) ?? 0,
       children,
-      files: files
-        .filter((file) => parentFolderForPath(file.path) === path)
-        .sort((left, right) => left.name.localeCompare(right.name)),
-    });
+      autoExpand: path !== "." && directFiles.length === 0 && children.length === 1,
+      files: directFiles,
+    };
   };
   return makeNode(".");
 }
@@ -202,23 +204,6 @@ function foldersForFile(file: FileItem): string[] {
     folders.push(current);
   }
   return folders;
-}
-
-function compressNode(node: TreeNode): TreeNode {
-  if (node.path === ".") return node;
-  if (node.files.length > 0 || node.children.length !== 1) return node;
-  const child = node.children[0];
-  if (child.files.length === 0 && child.children.length === 1) {
-    const compressed = compressNode(child);
-    return {
-      ...compressed,
-      label: `${node.label}/${compressed.label}`,
-    };
-  }
-  return {
-    ...child,
-    label: `${node.label}/${child.label}`,
-  };
 }
 
 function parentFolderForPath(path: string): string {

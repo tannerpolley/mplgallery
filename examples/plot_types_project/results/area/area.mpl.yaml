@@ -1,0 +1,16 @@
+version: 1
+plot_id: area
+title: Area Plot
+files:
+  figures:
+  - area.svg
+  data:
+  - area.csv
+matplotlib:
+  kind: area
+  title: Area Plot
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150

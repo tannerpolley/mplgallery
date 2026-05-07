@@ -1,0 +1,27 @@
+version: 1
+plot_id: scatter
+title: Signal scatter
+files:
+  figures:
+  - scatter.svg
+  data:
+  - scatter.csv
+matplotlib:
+  kind: scatter
+  x: signal_x
+  title: Signal scatter
+  xlabel: Signal x
+  xlabel_unit: $\mu\mathrm{m}$
+  ylabel: Signal y
+  ylabel_unit: $\mu\mathrm{m}$
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150
+  series:
+  - y: signal_y
+    label: Samples
+    color: '#2ca02c'
+    marker: o
+    alpha: 0.78

@@ -1,0 +1,36 @@
+version: 1
+plot_id: subplot_residual_panel
+title: Residual panel
+files:
+  figures:
+  - subplot_residual_panel.svg
+  data:
+  - subplot_residual_panel.csv
+matplotlib:
+  kind: bar
+  x: time_s
+  y: []
+  title: Residual panel
+  xlabel: Time
+  xlabel_unit: $\mathrm{s}$
+  ylabel: Residual
+  ylabel_unit: $\mathrm{a.u.}$
+  xscale: linear
+  yscale: linear
+  grid: true
+  figure:
+    width_inches: 6.0
+    height_inches: 3.0
+    dpi: 150
+  series:
+  - y: residual_abs
+    label: Absolute residual
+    color: '#2ca02c'
+    edgecolor: '#17202f'
+    linewidth: 0.4
+    hatch: ''
+    bar_width: 0.055
+    alpha: 0.75
+  subplots: []
+  sharex: false
+  sharey: false

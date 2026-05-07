@@ -196,8 +196,33 @@ class CSVStudioIndex(BaseModel):
     csv_roots: list[CSVRootRecord] = Field(default_factory=list)
     datasets: list[DatasetRecord] = Field(default_factory=list)
     records: list["PlotRecord"] = Field(default_factory=list)
+    plot_sets: list["PlotSetRecord"] = Field(default_factory=list)
     ignored_dir_count: int = 0
     imported_artifacts: list["PlotRecord"] = Field(default_factory=list)
+
+
+class PlotSetSidecar(BaseModel):
+    version: int = 1
+    plot_id: str
+    title: str | None = None
+    figure_files: list[Path] = Field(default_factory=list)
+    data_files: list[Path] = Field(default_factory=list)
+    render_command: str | None = None
+    redraw: RedrawMetadata | None = None
+
+
+class PlotSetRecord(BaseModel):
+    plot_set_id: str
+    title: str
+    path: Path
+    relative_path: Path
+    csv_files: list[Path] = Field(default_factory=list)
+    figure_files: list[Path] = Field(default_factory=list)
+    metadata_files: list[Path] = Field(default_factory=list)
+    mpl_yaml_path: Path | None = None
+    editable: bool = False
+    render_command: str | None = None
+    redraw: RedrawMetadata | None = None
 
 
 class ManifestRecord(BaseModel):

@@ -1,0 +1,29 @@
+version: 1
+plot_id: residual_distribution
+title: Residual distribution
+files:
+  figures:
+  - residual_distribution.svg
+  data:
+  - residual_distribution.csv
+matplotlib:
+  kind: hist
+  x: sample_index
+  y: []
+  title: Residual distribution
+  xlabel: Residual
+  xlabel_unit: $\mathrm{mV}$
+  ylabel: Frequency
+  xscale: linear
+  yscale: linear
+  grid: true
+  bins: 18
+  figure:
+    width_inches: 6.0
+    height_inches: 4.0
+    dpi: 150
+  series:
+  - y: residual
+    label: Residuals
+    color: '#ff7f0e'
+    alpha: 0.8
