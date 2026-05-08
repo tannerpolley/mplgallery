@@ -99,6 +99,28 @@ mplgallery serve .
 mplgallery desktop . --browser
 ```
 
+## Build a Windows single-file desktop executable
+
+The repo now includes a PyInstaller-based Windows distribution path around the
+desktop launcher. From this repo on Windows:
+
+```bash
+uv sync --extra desktop --group windows-dist
+uv run python scripts/build_windows_dist.py
+```
+
+That produces:
+
+- `dist/windows/mplgallery-desktop.exe`
+- `dist/windows/mplgallery-desktop-<version>-windows-<arch>.zip`
+- `dist/windows/mplgallery-desktop-build.json`
+
+The build script also verifies the produced EXE by:
+
+- running a non-interactive self-test mode;
+- launching its bundled Streamlit backend in smoke-test mode;
+- writing verification receipts into `build/windows-dist/`.
+
 ## Scan a project
 
 ```bash

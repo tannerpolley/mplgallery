@@ -19,22 +19,28 @@ def test_base_dependencies_keep_dvc_and_mlflow_optional() -> None:
 
     dependencies = "\n".join(pyproject["project"]["dependencies"]).lower()
     optional = pyproject["project"]["optional-dependencies"]
+    dependency_groups = pyproject["dependency-groups"]
 
     assert "dvc" not in dependencies
     assert "mlflow" not in dependencies
     assert optional["dvc"] == ["dvc>=3.0"]
     assert optional["mlflow"] == ["mlflow>=2.0"]
+    assert any("pyinstaller>=" in requirement for requirement in dependency_groups["windows-dist"])
 
 
 def test_package_declares_frontend_dist_and_excludes_node_modules() -> None:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
     wheel_config = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]
     sdist_config = pyproject["tool"]["hatch"]["build"]["targets"]["sdist"]
+    desktop_source = (REPO_ROOT / "src" / "mplgallery" / "desktop.py").read_text(encoding="utf-8")
 
     assert (REPO_ROOT / "src/mplgallery/ui/frontend/dist/index.html").exists()
     assert wheel_config["packages"] == ["src/mplgallery"]
     assert "src/mplgallery/ui/frontend/node_modules/**" in wheel_config["exclude"]
     assert "src/mplgallery/ui/frontend/node_modules/**" in sdist_config["exclude"]
+    assert (REPO_ROOT / "scripts" / "build_windows_dist.py").exists()
+    assert 'if __name__ == "__main__":' in desktop_source
+    assert "gui_main()" in desktop_source
 
 
 def test_console_script_and_run_command_expose_root_launcher() -> None:
