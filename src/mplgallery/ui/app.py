@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 from pathlib import Path
 
 import streamlit as st
@@ -23,6 +25,22 @@ from mplgallery.ui.component import (
     selected_plot_id_from_state_or_query,
 )
 from mplgallery.ui.root_state import resolve_initial_root
+
+
+_FINGERPRINT_SUFFIXES = {".csv", ".svg", ".png", ".pdf", ".yaml", ".yml"}
+_SKIPPED_FINGERPRINT_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "node_modules",
+    "build",
+    "dist",
+}
 
 
 def main() -> None:
@@ -143,23 +161,114 @@ def _render_host_chrome(*, project_root: Path, launch_root: Path, settings) -> b
 
 
 def _load_index(project_root: Path, *, include_artifacts: bool = False) -> CSVStudioIndex:
+    fingerprint = _project_fingerprint(project_root)
+    return _load_index_cached(str(project_root), include_artifacts, fingerprint)
+
+
+@st.cache_data(show_spinner=False)
+def _load_index_cached(
+    project_root: str,
+    include_artifacts: bool,
+    fingerprint: tuple[tuple[str, int, int], ...],
+) -> CSVStudioIndex:
+    _ = fingerprint
     return build_csv_studio_index(
-        project_root,
+        Path(project_root),
         ensure_drafts=False,
         include_artifacts=include_artifacts,
     )
 
 
 def _render_records(project_root: Path, records: list[PlotRecord]) -> list[PlotRecord]:
+    records_json = json.dumps(
+        [record.model_dump(mode="json") for record in records],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return _render_records_cached(str(project_root), records_json, _records_fingerprint(records))
+
+
+@st.cache_data(show_spinner=False)
+def _render_records_cached(
+    project_root: str,
+    records_json: str,
+    fingerprint: tuple[tuple[str, tuple[str, int, int] | None, tuple[str, int, int] | None, tuple[tuple[str, int, int], ...]], ...],
+) -> list[PlotRecord]:
+    _ = fingerprint
+    root = Path(project_root)
+    records = [PlotRecord.model_validate(item) for item in json.loads(records_json)]
     rendered: list[PlotRecord] = []
     for record in records:
         try:
-            rendered.append(render_cached_plot(project_root, record))
+            rendered.append(render_cached_plot(root, record))
         except Exception as exc:
             rendered.append(
                 record.model_copy(update={"cache": CacheMetadata(render_error=str(exc))})
             )
     return rendered
+
+
+def _project_fingerprint(project_root: Path) -> tuple[tuple[str, int, int], ...]:
+    """Return a compact signature for files that can affect discovery/rendering."""
+    root = project_root.resolve()
+    if not root.exists():
+        return ()
+    signatures: list[tuple[str, int, int]] = []
+    for current_root, dir_names, file_names in os.walk(root):
+        current_path = Path(current_root)
+        relative_parts = current_path.relative_to(root).parts
+        if relative_parts[:2] == (".mplgallery", "cache"):
+            dir_names[:] = []
+            continue
+        dir_names[:] = [
+            name
+            for name in dir_names
+            if name not in _SKIPPED_FINGERPRINT_DIRS
+            and tuple((*relative_parts, name))[:2] != (".mplgallery", "cache")
+        ]
+        for file_name in file_names:
+            path = current_path / file_name
+            if path.suffix.lower() not in _FINGERPRINT_SUFFIXES:
+                continue
+            signature = _path_signature(path, root)
+            if signature is not None:
+                signatures.append(signature)
+    return tuple(sorted(signatures))
+
+
+def _records_fingerprint(
+    records: list[PlotRecord],
+) -> tuple[tuple[str, tuple[str, int, int] | None, tuple[str, int, int] | None, tuple[tuple[str, int, int], ...]], ...]:
+    signatures = []
+    for record in records:
+        source_csv = record.plot_csv or record.csv
+        root = record.image.path.parent
+        metadata = tuple(
+            signature
+            for signature in (_path_signature(path, root) for path in record.metadata_files)
+            if signature is not None
+        )
+        signatures.append(
+            (
+                record.plot_id,
+                _path_signature(record.image.path, root),
+                _path_signature(source_csv.path, root) if source_csv else None,
+                metadata,
+            )
+        )
+    return tuple(sorted(signatures, key=lambda item: item[0]))
+
+
+def _path_signature(path: Path, root: Path) -> tuple[str, int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        relative = path
+    return (relative.as_posix(), int(stat.st_size), int(stat.st_mtime_ns))
 
 
 if __name__ == "__main__":

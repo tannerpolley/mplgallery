@@ -63,7 +63,7 @@ export type PlotRecord = {
   rawCsvPath?: string | null;
   confidence: string;
   reason?: string | null;
-  imageSrc: string;
+  imageSrc?: string | null;
   cachePath?: string | null;
   renderError?: string | null;
   csvPreview?: string | null;
@@ -118,6 +118,8 @@ export type PlotSetAttachment = {
   sourcePath: string;
   plotId?: string | null;
   datasetId?: string | null;
+  textPreview?: string | null;
+  textPreviewTruncated?: boolean;
 };
 
 export type PlotSetEntity = {
@@ -207,6 +209,7 @@ export type ComponentEvent =
   | { id: string; type: "draft_checked_datasets"; dataset_ids: string[] }
   | { id: string; type: "select_folder"; folder_path: string }
   | { id: string; type: "toggle_plot_set_checked"; plot_set_id: string; checked: boolean }
+  | { id: string; type: "set_checked_plot_sets"; plot_set_ids: string[] }
   | { id: string; type: "select_plot_set"; plot_set_id: string }
   | { id: string; type: "set_preferred_attachment_view"; plot_set_id: string; attachment_id: string }
   | { id: string; type: "toggle_show_ungrouped"; show: boolean }

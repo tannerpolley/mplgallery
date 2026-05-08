@@ -20,7 +20,7 @@ from mplgallery.core.studio import (
     import_artifact_references,
     init_csv_root,
 )
-from mplgallery.ui.app import _load_index
+from mplgallery.ui.app import _load_index, _project_fingerprint
 from mplgallery.ui.component import build_component_payload
 
 
@@ -239,6 +239,7 @@ def test_component_payload_includes_dataset_and_owned_plot_metadata(tmp_path: Pa
         datasets=index.datasets,
         selected_plot_id=None,
         errors={},
+        hydrated_plot_set_ids={index.datasets[0].dataset_id},
     )
 
     assert payload["selectedPlotId"] is None
@@ -258,6 +259,27 @@ def test_component_payload_includes_dataset_and_owned_plot_metadata(tmp_path: Pa
     assert payload["records"][0]["previewError"] is None
 
 
+def test_component_payload_defers_heavy_previews_until_plot_set_is_hydrated(tmp_path: Path) -> None:
+    csv_root = tmp_path / "data"
+    write(csv_root / "response.csv", "time,response\n0,1\n1,2\n")
+    index = draft_csv_root(csv_root, project_root=tmp_path)
+
+    payload = build_component_payload(
+        project_root=tmp_path,
+        records=index.records,
+        datasets=index.datasets,
+        selected_plot_id=None,
+        errors={},
+    )
+
+    assert payload["datasets"][0]["previewColumns"] == ["time", "response"]
+    assert payload["datasets"][0]["previewRows"] == []
+    assert payload["datasets"][0]["previewTruncated"] is False
+    assert payload["records"][0]["imageSrc"] is None
+    assert payload["records"][0]["previewColumns"] == ["time", "response"]
+    assert payload["records"][0]["previewRows"] == []
+
+
 def test_component_payload_limits_dataset_preview_rows_and_reports_truncation(tmp_path: Path) -> None:
     csv_root = tmp_path / "data"
     rows = "\n".join(f"{index},{index * 2}" for index in range(260))
@@ -270,6 +292,7 @@ def test_component_payload_limits_dataset_preview_rows_and_reports_truncation(tm
         datasets=index.datasets,
         selected_plot_id=None,
         errors={},
+        hydrated_plot_set_ids={index.datasets[0].dataset_id},
     )
     dataset = payload["datasets"][0]
 
@@ -293,6 +316,7 @@ def test_component_payload_preview_error_does_not_break_payload(tmp_path: Path, 
         datasets=index.datasets,
         selected_plot_id=None,
         errors={},
+        hydrated_plot_set_ids={index.datasets[0].dataset_id},
     )
     dataset = payload["datasets"][0]
 
@@ -300,6 +324,17 @@ def test_component_payload_preview_error_does_not_break_payload(tmp_path: Path, 
     assert dataset["previewRows"] == []
     assert dataset["previewTruncated"] is False
     assert dataset["previewError"] == "preview failure"
+
+
+def test_project_fingerprint_ignores_app_cache_and_tracks_plot_inputs(tmp_path: Path) -> None:
+    data_file = write(tmp_path / "results" / "case" / "response.csv", "x,y\n0,1\n")
+    initial = _project_fingerprint(tmp_path)
+
+    write(tmp_path / ".mplgallery" / "cache" / "preview.png", "cache")
+    assert _project_fingerprint(tmp_path) == initial
+
+    data_file.write_text("x,y\n0,2\n1,3\n", encoding="utf-8")
+    assert _project_fingerprint(tmp_path) != initial
 
 
 def test_component_payload_exposes_unified_file_items_without_raw_csvs(tmp_path: Path) -> None:
