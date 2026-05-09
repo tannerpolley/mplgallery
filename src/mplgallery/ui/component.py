@@ -131,6 +131,7 @@ def build_component_payload(
     root_error: str | None = None,
     show_root_chooser: bool = False,
     hydrated_plot_set_ids: set[str] | None = None,
+    app_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     associated_plot_ids = _associated_plot_ids_by_dataset(records)
     checked_plot_set_ids = set(st.session_state.get("mplgallery_checked_plot_set_ids", []))
@@ -155,6 +156,7 @@ def build_component_payload(
     files_view = _files_view_payload(plot_sets)
     return {
         "projectRoot": str(project_root),
+        "appInfo": app_info or {},
         "rootContext": {
             "activeRoot": str(project_root),
             "launchRoot": str(launch_root or project_root),

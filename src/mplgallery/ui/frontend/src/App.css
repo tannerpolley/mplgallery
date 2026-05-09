@@ -149,6 +149,18 @@ summary:focus-visible {
   color: var(--mg-accent);
 }
 
+.mg-appbar-button.is-update {
+  border-color: #b9d3c2;
+  background: #f2f8f4;
+  color: #2f7a50;
+  font-weight: 750;
+}
+
+.mg-appbar-button.is-update:hover {
+  border-color: #2f7a50;
+  color: #1f6a40;
+}
+
 .mg-appbar-button:disabled {
   cursor: default;
   opacity: 0.48;

@@ -71,7 +71,14 @@ roots.
 
 ## Windows desktop app
 
-On Windows, install the optional desktop extra and launch the native window:
+On Windows, MPLGallery has two desktop paths:
+
+- installed Python package mode, useful for development;
+- release app mode, a single-file `mplgallery-desktop.exe` with Windows app
+  metadata, an icon, Start Menu shortcuts, and update prompts.
+
+For development, install the optional desktop extra and launch the native
+window:
 
 ```bash
 mplgallery desktop .
@@ -99,6 +106,24 @@ mplgallery serve .
 mplgallery desktop . --browser
 ```
 
+### Install the released Windows app
+
+Download the latest `mplgallery-desktop-<version>-windows-<arch>.zip` from
+GitHub Releases, extract it, then install the app shortcut:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_windows_app.ps1 -ExePath .\mplgallery-desktop.exe -DesktopShortcut
+```
+
+The installer copies the executable to
+`%LOCALAPPDATA%\Programs\MPLGallery\mplgallery-desktop.exe` and creates a Start
+Menu shortcut. The Start Menu shortcut can be pinned to the taskbar like a
+normal Windows app.
+
+When the desktop UI starts, it checks GitHub Releases for a newer version. If a
+newer Windows release asset exists, the app bar shows an update button that
+opens the release download.
+
 ## Build a Windows single-file desktop executable
 
 The repo now includes a PyInstaller-based Windows distribution path around the
@@ -114,6 +139,9 @@ That produces:
 - `dist/windows/mplgallery-desktop.exe`
 - `dist/windows/mplgallery-desktop-<version>-windows-<arch>.zip`
 - `dist/windows/mplgallery-desktop-build.json`
+
+Tagged GitHub releases also build and publish the Windows app asset from the
+`windows-latest` runner.
 
 The build script also verifies the produced EXE by:
 

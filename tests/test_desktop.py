@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import mplgallery.desktop as desktop
+from mplgallery.updater import UpdateCheckResult
 
 
 def test_streamlit_command_uses_python_module_in_dev_mode(tmp_path: Path) -> None:
@@ -48,6 +49,7 @@ def test_write_self_test_records_runtime_details(tmp_path: Path, monkeypatch) ->
     assert payload["ok"] is True
     assert payload["frozen"] is True
     assert payload["executable"] == "C:/dist/mplgallery-desktop.exe"
+    assert payload["app_id"] == desktop.APP_USER_MODEL_ID
     assert payload["app_path"].endswith("mplgallery\\ui\\app.py") or payload["app_path"].endswith("mplgallery/ui/app.py")
 
 
@@ -59,3 +61,13 @@ def test_streamlit_env_disables_development_mode(monkeypatch) -> None:
 
     assert env["BROWSER"] == "none"
     assert env["STREAMLIT_GLOBAL_DEVELOPMENT_MODE"] == "false"
+
+
+def test_update_check_payload_uses_packaged_app_metadata(monkeypatch) -> None:
+    monkeypatch.setattr(desktop, "check_for_updates", lambda: UpdateCheckResult(checked=True, available=False))
+
+    payload = desktop._desktop_update_payload()
+
+    assert payload["appId"] == desktop.APP_USER_MODEL_ID
+    assert payload["version"] == desktop.APP_VERSION
+    assert payload["update"]["checked"] is True

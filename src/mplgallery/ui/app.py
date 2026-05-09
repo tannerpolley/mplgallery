@@ -17,6 +17,7 @@ from mplgallery.core.user_settings import (
 from mplgallery.core.models import CSVStudioIndex, CacheMetadata, PlotRecord
 from mplgallery.core.renderer import render_cached_plot
 from mplgallery.core.studio import build_csv_studio_index
+from mplgallery.desktop import _desktop_update_payload
 from mplgallery.ui.component import (
     build_component_payload,
     component_errors,
@@ -76,6 +77,7 @@ def main() -> None:
         recent_roots=settings.recent_roots,
         root_error=st.session_state.get("mplgallery_root_error"),
         show_root_chooser=args.choose_root,
+        app_info=_cached_app_info(),
     )
     result = render_plot_browser(payload)
     if process_component_event(event=result.event, project_root=project_root, launch_root=launch_root):
@@ -158,6 +160,11 @@ def _render_host_chrome(*, project_root: Path, launch_root: Path, settings) -> b
         unsafe_allow_html=True,
     )
     return False
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_app_info() -> dict[str, object]:
+    return _desktop_update_payload()
 
 
 def _load_index(project_root: Path, *, include_artifacts: bool = False) -> CSVStudioIndex:
