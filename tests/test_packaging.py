@@ -45,6 +45,7 @@ def test_package_declares_frontend_dist_and_excludes_node_modules() -> None:
     assert (REPO_ROOT / "packaging" / "windows" / "mplgallery.ico").exists()
     assert (REPO_ROOT / "scripts" / "install_windows_app.ps1").exists()
     assert (REPO_ROOT / "scripts" / "install_windows_app.cmd").exists()
+    assert (REPO_ROOT / "scripts" / "run_windows_setup.cmd").exists()
     assert 'if __name__ == "__main__":' in desktop_source
     assert "gui_main()" in desktop_source
 
@@ -95,6 +96,10 @@ def test_windows_dist_build_embeds_app_metadata() -> None:
     assert "MPLGallery" in build_script
     assert "mplgallery/assets" in build_script
     assert "Install MPLGallery.cmd" in build_script
+    assert "MPLGallery Setup.exe" in build_script
+    assert "run_windows_setup.cmd" in build_script
+    assert "iexpress.exe" in build_script
+    assert "Stop-MplGalleryProcesses" in installer_script
     assert "Start Menu" in installer_script
     assert "Desktop" in installer_script
     assert "windows-latest" in release_workflow

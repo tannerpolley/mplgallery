@@ -37,11 +37,32 @@ function New-Shortcut {
     $shortcut.Save()
 }
 
+function Stop-MplGalleryProcesses {
+    param([string]$InstalledExe)
+
+    $targetPath = [System.IO.Path]::GetFullPath($InstalledExe)
+    $processes = Get-CimInstance Win32_Process | Where-Object {
+        ($_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath)) -or
+        ($_.CommandLine -and $_.CommandLine -like "*--webview-exe-name=mplgallery-desktop.exe*")
+    }
+    foreach ($process in $processes) {
+        if ($process.ProcessId -ne $PID) {
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    }
+    foreach ($process in $processes) {
+        if ($process.ProcessId -ne $PID) {
+            Wait-Process -Id $process.ProcessId -Timeout 10 -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 $sourceExe = Resolve-MplGalleryExe -Candidate $ExePath
 $installRoot = [Environment]::ExpandEnvironmentVariables($InstallDir)
 $installedExe = Join-Path $installRoot "mplgallery-desktop.exe"
 
 New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+Stop-MplGalleryProcesses -InstalledExe $installedExe
 Copy-Item -LiteralPath $sourceExe -Destination $installedExe -Force
 
 $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\MPLGallery"

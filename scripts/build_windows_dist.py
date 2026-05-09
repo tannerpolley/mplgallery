@@ -25,6 +25,10 @@ BUILD_REPORT_JSON = DIST_ROOT / "mplgallery-desktop-build.json"
 INSTALLER_SCRIPT = REPO_ROOT / "scripts" / "install_windows_app.ps1"
 INSTALLER_WRAPPER = REPO_ROOT / "scripts" / "install_windows_app.cmd"
 INSTALLER_WRAPPER_NAME = "Install MPLGallery.cmd"
+SETUP_WRAPPER = REPO_ROOT / "scripts" / "run_windows_setup.cmd"
+SETUP_WRAPPER_NAME = "run_windows_setup.cmd"
+SETUP_EXE_NAME = "MPLGallery Setup.exe"
+IEXPRESS_SED = BUILD_ROOT / "mplgallery-setup.sed"
 
 
 def main() -> None:
@@ -34,16 +38,20 @@ def main() -> None:
     version = _project_version()
     exe_path = DIST_ROOT / "mplgallery-desktop.exe"
     zip_path = DIST_ROOT / _zip_name(version)
+    setup_path = DIST_ROOT / SETUP_EXE_NAME
 
     _reset_paths()
     _write_version_file(version)
     args = _pyinstaller_args(exe_path)
     pyinstaller_main.run(args)
     _verify_executable(exe_path)
-    _write_zip(exe_path, zip_path)
-    _write_report(exe_path, zip_path, version)
+    _write_installer_files(exe_path)
+    _write_setup_exe(setup_path)
+    _write_zip(exe_path, zip_path, setup_path)
+    _write_report(exe_path, zip_path, setup_path, version)
 
     print(exe_path)
+    print(setup_path)
     print(zip_path)
     print(BUILD_REPORT_JSON)
 
@@ -142,34 +150,101 @@ def _verify_executable(exe_path: Path) -> None:
     )
 
 
-def _write_zip(exe_path: Path, zip_path: Path) -> None:
+def _write_installer_files(exe_path: Path) -> None:
+    packaged_script = DIST_ROOT / INSTALLER_SCRIPT.name
+    packaged_wrapper = DIST_ROOT / INSTALLER_WRAPPER_NAME
+    packaged_setup_wrapper = DIST_ROOT / SETUP_WRAPPER_NAME
+    shutil.copy2(INSTALLER_SCRIPT, packaged_script)
+    shutil.copy2(INSTALLER_WRAPPER, packaged_wrapper)
+    shutil.copy2(SETUP_WRAPPER, packaged_setup_wrapper)
+
+
+def _write_setup_exe(setup_path: Path) -> None:
+    iexpress_path = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "iexpress.exe"
+    if not iexpress_path.exists():
+        raise RuntimeError("iexpress.exe was not found; cannot build MPLGallery Setup.exe")
+    if setup_path.exists():
+        setup_path.unlink()
+    IEXPRESS_SED.parent.mkdir(parents=True, exist_ok=True)
+    IEXPRESS_SED.write_text(_iexpress_sed(setup_path), encoding="utf-8")
+    subprocess.run([str(iexpress_path), "/N", str(IEXPRESS_SED)], check=True, cwd=DIST_ROOT)
+    if not setup_path.exists():
+        raise RuntimeError(f"Expected installer was not created: {setup_path}")
+
+
+def _write_zip(exe_path: Path, zip_path: Path, setup_path: Path) -> None:
     zip_path.parent.mkdir(parents=True, exist_ok=True)
     if zip_path.exists():
         zip_path.unlink()
-    packaged_script = zip_path.parent / INSTALLER_SCRIPT.name
-    packaged_wrapper = zip_path.parent / INSTALLER_WRAPPER_NAME
-    shutil.copy2(INSTALLER_SCRIPT, packaged_script)
-    shutil.copy2(INSTALLER_WRAPPER, packaged_wrapper)
     with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(setup_path, setup_path.name)
         archive.write(exe_path, exe_path.name)
-        archive.write(packaged_script, packaged_script.name)
-        archive.write(packaged_wrapper, packaged_wrapper.name)
+        archive.write(DIST_ROOT / INSTALLER_SCRIPT.name, INSTALLER_SCRIPT.name)
+        archive.write(DIST_ROOT / INSTALLER_WRAPPER_NAME, INSTALLER_WRAPPER_NAME)
+        archive.write(DIST_ROOT / SETUP_WRAPPER_NAME, SETUP_WRAPPER_NAME)
 
 
-def _write_report(exe_path: Path, zip_path: Path, version: str) -> None:
+def _write_report(exe_path: Path, zip_path: Path, setup_path: Path, version: str) -> None:
     BUILD_REPORT_JSON.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "version": version,
         "platform": platform.platform(),
         "artifact": str(exe_path),
         "zip": str(zip_path),
+        "setup": str(setup_path),
         "app_name": "MPLGallery",
         "app_id": "Tanner.MPLGallery",
-        "installer": str(DIST_ROOT / INSTALLER_WRAPPER_NAME),
+        "installer": str(setup_path),
         "self_test": json.loads(SELF_TEST_JSON.read_text(encoding="utf-8")),
         "smoke_test": json.loads(SMOKE_TEST_JSON.read_text(encoding="utf-8")),
     }
     BUILD_REPORT_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _iexpress_sed(setup_path: Path) -> str:
+    source_dir = str(DIST_ROOT) + "\\"
+    return f"""[Version]
+Class=IEXPRESS
+SEDVersion=3
+[Options]
+PackagePurpose=InstallApp
+ShowInstallProgramWindow=0
+HideExtractAnimation=0
+UseLongFileName=1
+InsideCompressed=0
+CAB_FixedSize=0
+CAB_ResvCodeSigning=0
+RebootMode=N
+InstallPrompt=%InstallPrompt%
+DisplayLicense=%DisplayLicense%
+FinishMessage=%FinishMessage%
+TargetName=%TargetName%
+FriendlyName=%FriendlyName%
+AppLaunched=%AppLaunched%
+PostInstallCmd=%PostInstallCmd%
+AdminQuietInstCmd=%AdminQuietInstCmd%
+UserQuietInstCmd=%UserQuietInstCmd%
+SourceFiles=SourceFiles
+[Strings]
+InstallPrompt=
+DisplayLicense=
+FinishMessage=MPLGallery has been installed. Search for MPLGallery in the Windows Start menu.
+TargetName={setup_path}
+FriendlyName=MPLGallery Setup
+AppLaunched={SETUP_WRAPPER_NAME}
+PostInstallCmd=<None>
+AdminQuietInstCmd={SETUP_WRAPPER_NAME}
+UserQuietInstCmd={SETUP_WRAPPER_NAME}
+FILE0=mplgallery-desktop.exe
+FILE1={INSTALLER_SCRIPT.name}
+FILE2={SETUP_WRAPPER_NAME}
+[SourceFiles]
+SourceFiles0={source_dir}
+[SourceFiles0]
+%FILE0%=
+%FILE1%=
+%FILE2%=
+"""
 
 
 def _zip_name(version: str) -> str:
