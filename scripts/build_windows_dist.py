@@ -22,6 +22,9 @@ ICON_FILE = REPO_ROOT / "packaging" / "windows" / "mplgallery.ico"
 SELF_TEST_JSON = BUILD_ROOT / "self-test.json"
 SMOKE_TEST_JSON = BUILD_ROOT / "smoke-test.json"
 BUILD_REPORT_JSON = DIST_ROOT / "mplgallery-desktop-build.json"
+INSTALLER_SCRIPT = REPO_ROOT / "scripts" / "install_windows_app.ps1"
+INSTALLER_WRAPPER = REPO_ROOT / "scripts" / "install_windows_app.cmd"
+INSTALLER_WRAPPER_NAME = "Install MPLGallery.cmd"
 
 
 def main() -> None:
@@ -143,10 +146,14 @@ def _write_zip(exe_path: Path, zip_path: Path) -> None:
     zip_path.parent.mkdir(parents=True, exist_ok=True)
     if zip_path.exists():
         zip_path.unlink()
-    installer_path = REPO_ROOT / "scripts" / "install_windows_app.ps1"
+    packaged_script = zip_path.parent / INSTALLER_SCRIPT.name
+    packaged_wrapper = zip_path.parent / INSTALLER_WRAPPER_NAME
+    shutil.copy2(INSTALLER_SCRIPT, packaged_script)
+    shutil.copy2(INSTALLER_WRAPPER, packaged_wrapper)
     with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.write(exe_path, exe_path.name)
-        archive.write(installer_path, installer_path.name)
+        archive.write(packaged_script, packaged_script.name)
+        archive.write(packaged_wrapper, packaged_wrapper.name)
 
 
 def _write_report(exe_path: Path, zip_path: Path, version: str) -> None:
@@ -158,7 +165,7 @@ def _write_report(exe_path: Path, zip_path: Path, version: str) -> None:
         "zip": str(zip_path),
         "app_name": "MPLGallery",
         "app_id": "Tanner.MPLGallery",
-        "installer": str(REPO_ROOT / "scripts" / "install_windows_app.ps1"),
+        "installer": str(DIST_ROOT / INSTALLER_WRAPPER_NAME),
         "self_test": json.loads(SELF_TEST_JSON.read_text(encoding="utf-8")),
         "smoke_test": json.loads(SMOKE_TEST_JSON.read_text(encoding="utf-8")),
     }

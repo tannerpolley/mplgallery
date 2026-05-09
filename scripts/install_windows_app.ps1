@@ -11,6 +11,10 @@ function Resolve-MplGalleryExe {
     if ($Candidate) {
         return (Resolve-Path -LiteralPath $Candidate).Path
     }
+    $packaged = Join-Path $PSScriptRoot "mplgallery-desktop.exe"
+    if (Test-Path -LiteralPath $packaged) {
+        return (Resolve-Path -LiteralPath $packaged).Path
+    }
     $local = Join-Path $PSScriptRoot "..\dist\windows\mplgallery-desktop.exe"
     if (Test-Path -LiteralPath $local) {
         return (Resolve-Path -LiteralPath $local).Path
