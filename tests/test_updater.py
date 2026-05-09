@@ -52,7 +52,7 @@ def test_update_check_handles_network_errors() -> None:
 
     result = check_for_updates(current_version="0.1.0", opener=raise_error)
 
-    assert result == UpdateCheckResult(checked=True, error="offline")
+    assert result == UpdateCheckResult(checked=True, current_version="0.1.0", error="offline")
 
 
 def test_windows_asset_score_prefers_desktop_zip_then_exe() -> None:

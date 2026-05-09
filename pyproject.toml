@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mplgallery"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local-first CSV Plot Studio for drafting and editing Matplotlib plots from analysis tables."
 readme = "README.md"
 requires-python = ">=3.10"
