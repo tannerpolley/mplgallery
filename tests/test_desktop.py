@@ -65,9 +65,12 @@ def test_streamlit_env_disables_development_mode(monkeypatch) -> None:
 
 def test_update_check_payload_uses_packaged_app_metadata(monkeypatch) -> None:
     monkeypatch.setattr(desktop, "check_for_updates", lambda: UpdateCheckResult(checked=True, available=False))
+    monkeypatch.setattr(desktop.os, "name", "nt")
+    monkeypatch.setattr(desktop.sys, "frozen", True, raising=False)
 
     payload = desktop._desktop_update_payload()
 
     assert payload["appId"] == desktop.APP_USER_MODEL_ID
     assert payload["version"] == desktop.APP_VERSION
+    assert payload["canInstallUpdates"] is True
     assert payload["update"]["checked"] is True

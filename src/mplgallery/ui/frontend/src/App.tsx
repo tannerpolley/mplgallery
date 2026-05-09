@@ -123,6 +123,7 @@ function App(props: StreamlitProps) {
   const payload = props.payload ?? emptyPayload;
   const appInfo = payload.appInfo ?? emptyPayload.appInfo;
   const updateInfo = appInfo?.update ?? null;
+  const canInstallUpdate = Boolean(appInfo?.canInstallUpdates && updateInfo?.downloadUrl);
   const rootContext = payload.rootContext ?? {
     activeRoot: payload.projectRoot,
     launchRoot: payload.projectRoot,
@@ -492,6 +493,16 @@ function App(props: StreamlitProps) {
   function openUpdate() {
     const target = updateInfo?.downloadUrl || updateInfo?.releaseUrl;
     if (!target) return;
+    if (canInstallUpdate && updateInfo?.downloadUrl) {
+      Streamlit.setComponentValue({
+        event: {
+          id: eventId("install_update"),
+          type: "install_update",
+          download_url: updateInfo.downloadUrl,
+        },
+      });
+      return;
+    }
     window.open(target, "_blank", "noopener,noreferrer");
   }
 
@@ -662,7 +673,7 @@ function App(props: StreamlitProps) {
           <button
             type="button"
             className="mg-appbar-button is-update"
-            aria-label={`Download ${appInfo?.name ?? "MPLGallery"} ${updateInfo.latestVersion ?? "update"}`}
+            aria-label={`${canInstallUpdate ? "Install" : "Download"} ${appInfo?.name ?? "MPLGallery"} ${updateInfo.latestVersion ?? "update"}`}
             onClick={openUpdate}
           >
             <CheckCircle2 aria-hidden="true" size={16} />

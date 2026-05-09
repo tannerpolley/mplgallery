@@ -218,7 +218,8 @@ export type ComponentEvent =
   | { id: string; type: "browse_project_root" }
   | { id: string; type: "change_project_root"; root_path: string }
   | { id: string; type: "reset_project_root" }
-  | { id: string; type: "forget_recent_root"; root_path: string };
+  | { id: string; type: "forget_recent_root"; root_path: string }
+  | { id: string; type: "install_update"; download_url: string };
 
 export type RootContext = {
   activeRoot: string;
@@ -241,6 +242,7 @@ export type AppInfo = {
   name?: string;
   version?: string;
   appId?: string;
+  canInstallUpdates?: boolean;
   update?: UpdateInfo;
 };
 

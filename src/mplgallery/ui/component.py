@@ -23,6 +23,7 @@ from mplgallery.core.renderer import (
 )
 from mplgallery.core.studio import draft_csv_dataset
 from mplgallery.core.user_settings import forget_recent_root, load_user_settings, save_user_settings
+from mplgallery.updater import install_windows_update
 from mplgallery.ui.root_state import browse_active_root, change_active_root, reset_active_root
 
 
@@ -86,6 +87,7 @@ class ComponentEvent(BaseModel):
         "change_project_root",
         "reset_project_root",
         "forget_recent_root",
+        "install_update",
     ]
     plot_id: str | None = None
     plot_set_id: str | None = None
@@ -97,6 +99,7 @@ class ComponentEvent(BaseModel):
     checked: bool | None = None
     show: bool | None = None
     root_path: str | None = None
+    download_url: str | None = None
     redraw: RedrawMetadata | None = None
     output_format: str | None = None
 
@@ -229,6 +232,10 @@ def process_component_event(
         return True
 
     if event.type == "refresh_index":
+        return True
+
+    if event.type == "install_update" and event.download_url:
+        _install_update(event.download_url)
         return True
 
     if event.type == "select_folder" and event.folder_path:
@@ -1003,6 +1010,21 @@ def _browse_project_root(project_root: Path) -> None:
 def _forget_recent_root(root_path: str) -> None:
     settings = forget_recent_root(load_user_settings(), Path(root_path))
     save_user_settings(settings)
+
+
+def _install_update(download_url: str) -> None:
+    try:
+        result = install_windows_update(download_url)
+    except Exception as exc:
+        st.session_state["mplgallery_update_install_status"] = {
+            "started": False,
+            "error": str(exc),
+        }
+        return
+    st.session_state["mplgallery_update_install_status"] = {
+        "started": result.started,
+        "path": str(result.staged.exe_path),
+    }
 
 
 def _set_active_project_root(project_root: Path) -> None:

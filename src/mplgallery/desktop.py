@@ -375,6 +375,7 @@ def _desktop_update_payload() -> dict[str, object]:
         "name": APP_NAME,
         "version": APP_VERSION,
         "appId": APP_USER_MODEL_ID,
+        "canInstallUpdates": os.name == "nt" and bool(getattr(sys, "frozen", False)),
         "update": check_for_updates().to_payload(),
     }
 

@@ -256,18 +256,21 @@ describe("App explorer", () => {
               downloadUrl: "https://github.com/tannerpolley/mplgallery/releases/download/v0.2.0/mplgallery.zip",
               error: null,
             },
+            canInstallUpdates: true,
           },
         })}
       />,
     );
 
     expect(screen.getByText("Update 0.2.0")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Download MPLGallery 0.2.0" }));
-    expect(openMock).toHaveBeenCalledWith(
-      "https://github.com/tannerpolley/mplgallery/releases/download/v0.2.0/mplgallery.zip",
-      "_blank",
-      "noopener,noreferrer",
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Install MPLGallery 0.2.0" }));
+    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
+      event: expect.objectContaining({
+        type: "install_update",
+        download_url: "https://github.com/tannerpolley/mplgallery/releases/download/v0.2.0/mplgallery.zip",
+      }),
+    });
+    expect(openMock).not.toHaveBeenCalled();
   });
 
   it("filters the explorer to CSV files or figure files from the workspace controls", () => {
