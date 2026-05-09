@@ -14,7 +14,22 @@ figures with scripts and want a cleaner way to inspect, compare, select, and
 lightly edit plot appearance without turning their analysis code into a web
 application.
 
-![MPLGallery browsing a project with plot-set folders and files](docs/assets/readme/mplgallery-browser.png)
+## Screenshots
+
+Browse a project, select plot sets, and compare the generated figures in one
+gallery view:
+
+![MPLGallery showing selected plot sets with real Matplotlib output](docs/assets/readme/mplgallery-gallery-overview.png)
+
+Open a plot-set sidecar to inspect the YAML-backed metadata that connects a
+figure, its data snapshot, and editable Matplotlib settings:
+
+![MPLGallery showing YAML metadata for an editable plot set](docs/assets/readme/mplgallery-yaml-metadata.png)
+
+Use the maximized plot view to inspect a figure and adjust plot appearance
+metadata such as title, labels, scales, figure settings, and series style:
+
+![MPLGallery maximized plot editor with axes controls](docs/assets/readme/mplgallery-style-editor.png)
 
 ## What It Does
 
