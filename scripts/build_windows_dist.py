@@ -102,6 +102,11 @@ def _mplgallery_runtime_datas() -> list[tuple[str, str]]:
     ui_root = REPO_ROOT / "src" / "mplgallery" / "ui"
     frontend_dist = ui_root / "frontend" / "dist"
     datas = [(str(ui_root / "app.py"), "mplgallery/ui")]
+    assets_root = REPO_ROOT / "src" / "mplgallery" / "assets"
+    for file_path in assets_root.rglob("*"):
+        if file_path.is_file():
+            destination = Path("mplgallery/assets") / file_path.relative_to(assets_root).parent
+            datas.append((str(file_path), destination.as_posix()))
     for file_path in frontend_dist.rglob("*"):
         if file_path.is_file():
             destination = Path("mplgallery/ui/frontend/dist") / file_path.relative_to(

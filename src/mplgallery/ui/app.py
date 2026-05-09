@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from importlib.resources import files
 from pathlib import Path
 
 import streamlit as st
@@ -52,7 +53,12 @@ def main() -> None:
     if project_root.is_dir():
         settings = remember_recent_root(settings, project_root)
         save_user_settings(settings)
-    st.set_page_config(page_title="MPLGallery", layout="wide", initial_sidebar_state="collapsed")
+    st.set_page_config(
+        page_title="MPLGallery",
+        page_icon=_app_icon_path(),
+        layout="wide",
+        initial_sidebar_state="collapsed",
+    )
     if _render_host_chrome(project_root=project_root, launch_root=launch_root, settings=settings):
         st.rerun()
         return
@@ -165,6 +171,10 @@ def _render_host_chrome(*, project_root: Path, launch_root: Path, settings) -> b
 @st.cache_data(ttl=3600, show_spinner=False)
 def _cached_app_info() -> dict[str, object]:
     return _desktop_update_payload()
+
+
+def _app_icon_path() -> str:
+    return str(files("mplgallery.assets").joinpath("mplgallery-icon.png"))
 
 
 def _load_index(project_root: Path, *, include_artifacts: bool = False) -> CSVStudioIndex:

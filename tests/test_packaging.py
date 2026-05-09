@@ -35,6 +35,9 @@ def test_package_declares_frontend_dist_and_excludes_node_modules() -> None:
     desktop_source = (REPO_ROOT / "src" / "mplgallery" / "desktop.py").read_text(encoding="utf-8")
 
     assert (REPO_ROOT / "src/mplgallery/ui/frontend/dist/index.html").exists()
+    assert (REPO_ROOT / "src/mplgallery/assets/mplgallery-icon.png").exists()
+    assert (REPO_ROOT / "src/mplgallery/assets/mplgallery.ico").exists()
+    assert (REPO_ROOT / "src/mplgallery/ui/frontend/public/favicon.png").exists()
     assert wheel_config["packages"] == ["src/mplgallery"]
     assert "src/mplgallery/ui/frontend/node_modules/**" in wheel_config["exclude"]
     assert "src/mplgallery/ui/frontend/node_modules/**" in sdist_config["exclude"]
@@ -89,6 +92,7 @@ def test_windows_dist_build_embeds_app_metadata() -> None:
     assert "--icon" in build_script
     assert "--version-file" in build_script
     assert "MPLGallery" in build_script
+    assert "mplgallery/assets" in build_script
     assert "Start Menu" in installer_script
     assert "Desktop" in installer_script
     assert "windows-latest" in release_workflow
