@@ -11,6 +11,14 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from mplgallery import __version__
+from mplgallery.updater import check_for_updates
+
+
+APP_NAME = "MPLGallery"
+APP_VERSION = __version__
+APP_USER_MODEL_ID = "Tanner.MPLGallery"
+
 
 def launch_desktop_app(
     project_root: Path,
@@ -20,7 +28,7 @@ def launch_desktop_app(
     include_artifacts: bool = True,
     width: int = 1600,
     height: int = 1000,
-    title: str = "MPLGallery",
+    title: str = APP_NAME,
 ) -> int:
     try:
         import webview
@@ -307,6 +315,8 @@ def _write_self_test(output_path: Path) -> None:
         "frozen": bool(getattr(sys, "frozen", False)),
         "executable": sys.executable,
         "app_path": str(_streamlit_app_path()),
+        "app_id": APP_USER_MODEL_ID,
+        "version": APP_VERSION,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -358,6 +368,15 @@ def _trace(event: str, payload: dict[str, object] | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record) + "\n")
+
+
+def _desktop_update_payload() -> dict[str, object]:
+    return {
+        "name": APP_NAME,
+        "version": APP_VERSION,
+        "appId": APP_USER_MODEL_ID,
+        "update": check_for_updates().to_payload(),
+    }
 
 
 if __name__ == "__main__":

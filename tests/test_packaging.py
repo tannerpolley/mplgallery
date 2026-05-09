@@ -39,6 +39,8 @@ def test_package_declares_frontend_dist_and_excludes_node_modules() -> None:
     assert "src/mplgallery/ui/frontend/node_modules/**" in wheel_config["exclude"]
     assert "src/mplgallery/ui/frontend/node_modules/**" in sdist_config["exclude"]
     assert (REPO_ROOT / "scripts" / "build_windows_dist.py").exists()
+    assert (REPO_ROOT / "packaging" / "windows" / "mplgallery.ico").exists()
+    assert (REPO_ROOT / "scripts" / "install_windows_app.ps1").exists()
     assert 'if __name__ == "__main__":' in desktop_source
     assert "gui_main()" in desktop_source
 
@@ -75,3 +77,19 @@ def test_desktop_command_exposes_native_window_mode_and_browser_fallback(monkeyp
     assert browser_result.exit_code == 0, browser_result.output
     run_mock.assert_called_once()
     assert run_mock.call_args.kwargs["open_browser"] is True
+
+
+def test_windows_dist_build_embeds_app_metadata() -> None:
+    build_script = (REPO_ROOT / "scripts" / "build_windows_dist.py").read_text(encoding="utf-8")
+    installer_script = (REPO_ROOT / "scripts" / "install_windows_app.ps1").read_text(encoding="utf-8")
+    release_workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--icon" in build_script
+    assert "--version-file" in build_script
+    assert "MPLGallery" in build_script
+    assert "Start Menu" in installer_script
+    assert "Desktop" in installer_script
+    assert "windows-latest" in release_workflow
+    assert "build_windows_dist.py" in release_workflow

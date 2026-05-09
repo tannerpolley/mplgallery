@@ -75,6 +75,10 @@ type GalleryLayoutMode = "grid" | "rows" | "columns";
 
 const emptyPayload: BrowserPayload = {
   projectRoot: "",
+  appInfo: {
+    name: "MPLGallery",
+    version: "0.1.0",
+  },
   rootContext: {
     activeRoot: "",
     launchRoot: "",
@@ -117,6 +121,8 @@ const layoutBounds = {
 
 function App(props: StreamlitProps) {
   const payload = props.payload ?? emptyPayload;
+  const appInfo = payload.appInfo ?? emptyPayload.appInfo;
+  const updateInfo = appInfo?.update ?? null;
   const rootContext = payload.rootContext ?? {
     activeRoot: payload.projectRoot,
     launchRoot: payload.projectRoot,
@@ -483,6 +489,12 @@ function App(props: StreamlitProps) {
     });
   }
 
+  function openUpdate() {
+    const target = updateInfo?.downloadUrl || updateInfo?.releaseUrl;
+    if (!target) return;
+    window.open(target, "_blank", "noopener,noreferrer");
+  }
+
   function forgetRecentRoot(rootPath: string) {
     Streamlit.setComponentValue({
       event: {
@@ -646,6 +658,17 @@ function App(props: StreamlitProps) {
           <RefreshCw aria-hidden="true" size={16} />
           Refresh
         </button>
+        {updateInfo?.available ? (
+          <button
+            type="button"
+            className="mg-appbar-button is-update"
+            aria-label={`Download ${appInfo?.name ?? "MPLGallery"} ${updateInfo.latestVersion ?? "update"}`}
+            onClick={openUpdate}
+          >
+            <CheckCircle2 aria-hidden="true" size={16} />
+            Update {updateInfo.latestVersion}
+          </button>
+        ) : null}
         <div className="mg-appbar-spacer" />
         <details className="mg-status-menu">
           <summary>
@@ -653,8 +676,11 @@ function App(props: StreamlitProps) {
             Status
             <ChevronDown aria-hidden="true" size={13} />
           </summary>
-          <div className="mg-status-popover" aria-label="Project status">
-            <span>{status.totalPlots} plots</span>
+            <div className="mg-status-popover" aria-label="Project status">
+              {appInfo?.version ? <span>App {appInfo.version}</span> : null}
+              {updateInfo?.checked && !updateInfo.available ? <span>Up to date</span> : null}
+              {updateInfo?.error ? <span className="is-warning">Update check failed</span> : null}
+              <span>{status.totalPlots} plots</span>
             <span>{status.matchedCsvs} CSV matched</span>
             <span className={status.missingCsvs ? "is-warning" : ""}>{status.missingCsvs} missing CSV</span>
             <span className={status.renderErrors ? "is-warning" : ""}>{status.renderErrors} render errors</span>

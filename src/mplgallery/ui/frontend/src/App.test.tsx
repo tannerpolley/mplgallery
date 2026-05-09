@@ -8,6 +8,8 @@ const streamlitMock = vi.hoisted(() => ({
   setComponentValue: vi.fn(),
 }));
 
+const openMock = vi.hoisted(() => vi.fn());
+
 vi.mock("streamlit-component-lib", () => ({
   Streamlit: streamlitMock,
 }));
@@ -170,6 +172,8 @@ function foldersPane() {
 describe("App explorer", () => {
   beforeEach(() => {
     streamlitMock.setComponentValue.mockClear();
+    openMock.mockClear();
+    vi.stubGlobal("open", openMock);
   });
 
   afterEach(() => {
@@ -233,6 +237,37 @@ describe("App explorer", () => {
     expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
       event: expect.objectContaining({ type: "refresh_index" }),
     });
+  });
+
+  it("prompts for available desktop app updates", () => {
+    render(
+      <App
+        payload={payload({
+          appInfo: {
+            name: "MPLGallery",
+            version: "0.1.0",
+            appId: "Tanner.MPLGallery",
+            update: {
+              checked: true,
+              available: true,
+              currentVersion: "0.1.0",
+              latestVersion: "0.2.0",
+              releaseUrl: "https://github.com/tannerpolley/mplgallery/releases/tag/v0.2.0",
+              downloadUrl: "https://github.com/tannerpolley/mplgallery/releases/download/v0.2.0/mplgallery.zip",
+              error: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Update 0.2.0")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Download MPLGallery 0.2.0" }));
+    expect(openMock).toHaveBeenCalledWith(
+      "https://github.com/tannerpolley/mplgallery/releases/download/v0.2.0/mplgallery.zip",
+      "_blank",
+      "noopener,noreferrer",
+    );
   });
 
   it("filters the explorer to CSV files or figure files from the workspace controls", () => {

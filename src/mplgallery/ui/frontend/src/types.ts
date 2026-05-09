@@ -178,6 +178,7 @@ export type SelectOption = {
 
 export type BrowserPayload = {
   projectRoot: string;
+  appInfo?: AppInfo;
   rootContext?: RootContext;
   selectedPlotId?: string | null;
   datasets: DatasetRecord[];
@@ -234,4 +235,21 @@ export type TreeNode = {
   autoExpand?: boolean;
   children: TreeNode[];
   files: FileItem[];
+};
+
+export type AppInfo = {
+  name?: string;
+  version?: string;
+  appId?: string;
+  update?: UpdateInfo;
+};
+
+export type UpdateInfo = {
+  checked: boolean;
+  available: boolean;
+  currentVersion?: string | null;
+  latestVersion?: string | null;
+  releaseUrl?: string | null;
+  downloadUrl?: string | null;
+  error?: string | null;
 };

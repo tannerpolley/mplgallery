@@ -6,6 +6,7 @@ import platform
 import shutil
 import subprocess
 import tomllib
+import zipfile
 from pathlib import Path
 
 from PyInstaller import __main__ as pyinstaller_main
@@ -16,6 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BUILD_ROOT = REPO_ROOT / "build" / "windows-dist"
 DIST_ROOT = REPO_ROOT / "dist" / "windows"
 SPEC_ROOT = BUILD_ROOT / "pyinstaller"
+VERSION_FILE = BUILD_ROOT / "mplgallery-version-info.txt"
+ICON_FILE = REPO_ROOT / "packaging" / "windows" / "mplgallery.ico"
 SELF_TEST_JSON = BUILD_ROOT / "self-test.json"
 SMOKE_TEST_JSON = BUILD_ROOT / "smoke-test.json"
 BUILD_REPORT_JSON = DIST_ROOT / "mplgallery-desktop-build.json"
@@ -30,6 +33,7 @@ def main() -> None:
     zip_path = DIST_ROOT / _zip_name(version)
 
     _reset_paths()
+    _write_version_file(version)
     args = _pyinstaller_args(exe_path)
     pyinstaller_main.run(args)
     _verify_executable(exe_path)
@@ -73,6 +77,10 @@ def _pyinstaller_args(exe_path: Path) -> list[str]:
         "--windowed",
         "--name",
         "mplgallery-desktop",
+        "--icon",
+        str(ICON_FILE),
+        "--version-file",
+        str(VERSION_FILE),
         "--distpath",
         str(exe_path.parent),
         "--workpath",
@@ -130,7 +138,10 @@ def _write_zip(exe_path: Path, zip_path: Path) -> None:
     zip_path.parent.mkdir(parents=True, exist_ok=True)
     if zip_path.exists():
         zip_path.unlink()
-    shutil.make_archive(str(zip_path.with_suffix("")), "zip", exe_path.parent, exe_path.name)
+    installer_path = REPO_ROOT / "scripts" / "install_windows_app.ps1"
+    with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(exe_path, exe_path.name)
+        archive.write(installer_path, installer_path.name)
 
 
 def _write_report(exe_path: Path, zip_path: Path, version: str) -> None:
@@ -140,6 +151,9 @@ def _write_report(exe_path: Path, zip_path: Path, version: str) -> None:
         "platform": platform.platform(),
         "artifact": str(exe_path),
         "zip": str(zip_path),
+        "app_name": "MPLGallery",
+        "app_id": "Tanner.MPLGallery",
+        "installer": str(REPO_ROOT / "scripts" / "install_windows_app.ps1"),
         "self_test": json.loads(SELF_TEST_JSON.read_text(encoding="utf-8")),
         "smoke_test": json.loads(SMOKE_TEST_JSON.read_text(encoding="utf-8")),
     }
@@ -149,6 +163,56 @@ def _write_report(exe_path: Path, zip_path: Path, version: str) -> None:
 def _zip_name(version: str) -> str:
     machine = platform.machine().lower() or "unknown"
     return f"mplgallery-desktop-{version}-windows-{machine}.zip"
+
+
+def _write_version_file(version: str) -> None:
+    VERSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    version_tuple = _version_tuple(version)
+    version_csv = ", ".join(str(part) for part in version_tuple)
+    VERSION_FILE.write_text(
+        f"""# UTF-8
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=({version_csv}),
+    prodvers=({version_csv}),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '040904B0',
+        [
+          StringStruct('CompanyName', 'Tanner'),
+          StringStruct('FileDescription', 'MPLGallery desktop app'),
+          StringStruct('FileVersion', '{version}'),
+          StringStruct('InternalName', 'mplgallery-desktop'),
+          StringStruct('OriginalFilename', 'mplgallery-desktop.exe'),
+          StringStruct('ProductName', 'MPLGallery'),
+          StringStruct('ProductVersion', '{version}')
+        ]
+      )
+    ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+""",
+        encoding="utf-8",
+    )
+
+
+def _version_tuple(version: str) -> tuple[int, int, int, int]:
+    parts: list[int] = []
+    for piece in version.split("."):
+        digits = "".join(character for character in piece if character.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple([*parts[:4], *([0] * (4 - len(parts)))])
 
 
 if __name__ == "__main__":
