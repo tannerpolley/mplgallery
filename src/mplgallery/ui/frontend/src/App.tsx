@@ -124,6 +124,7 @@ function App(props: StreamlitProps) {
   const payload = props.payload ?? emptyPayload;
   const appInfo = payload.appInfo ?? emptyPayload.appInfo;
   const updateInfo = appInfo?.update ?? null;
+  const updateInstallInfo = appInfo?.updateInstall ?? null;
   const canInstallUpdate = Boolean(appInfo?.canInstallUpdates && updateInfo?.downloadUrl);
   const imageLibraryMode = payload.browseMode === "image-library";
   const itemNoun = imageLibraryMode ? "images" : "plot sets";
@@ -153,6 +154,7 @@ function App(props: StreamlitProps) {
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [activeCardTabs, setActiveCardTabs] = useState<Record<string, string>>({});
   const [pendingDraftDatasetId, setPendingDraftDatasetId] = useState<string | null>(null);
+  const [updateInstallPending, setUpdateInstallPending] = useState(false);
   const [layout, setLayout] = useState(defaultLayout);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [foldersCollapsed, setFoldersCollapsed] = useState(false);
@@ -168,6 +170,11 @@ function App(props: StreamlitProps) {
   useEffect(() => {
     setSelectedPlotId(payload.selectedPlotId ?? null);
   }, [payload.selectedPlotId]);
+  useEffect(() => {
+    if (!updateInfo?.available || updateInstallInfo?.started || updateInstallInfo?.error) {
+      setUpdateInstallPending(false);
+    }
+  }, [updateInfo?.available, updateInstallInfo?.started, updateInstallInfo?.error]);
 
   useEffect(() => {
     setSelectedDatasetId(null);
@@ -499,6 +506,7 @@ function App(props: StreamlitProps) {
     const target = updateInfo?.downloadUrl || updateInfo?.releaseUrl;
     if (!target) return;
     if (canInstallUpdate && updateInfo?.downloadUrl) {
+      setUpdateInstallPending(true);
       Streamlit.setComponentValue({
         event: {
           id: eventId("install_update"),
@@ -680,9 +688,10 @@ function App(props: StreamlitProps) {
             className="mg-appbar-button is-update"
             aria-label={`${canInstallUpdate ? "Install" : "Download"} ${appInfo?.name ?? "MPLGallery"} ${updateInfo.latestVersion ?? "update"}`}
             onClick={openUpdate}
+            disabled={updateInstallPending}
           >
             <CheckCircle2 aria-hidden="true" size={16} />
-            Update {updateInfo.latestVersion}
+            {updateInstallPending ? "Downloading update..." : `Update ${updateInfo.latestVersion}`}
           </button>
         ) : null}
         <div className="mg-appbar-spacer" />
@@ -696,6 +705,9 @@ function App(props: StreamlitProps) {
               {appInfo?.version ? <span>App {appInfo.version}</span> : null}
               {updateInfo?.checked && !updateInfo.available ? <span>Up to date</span> : null}
               {updateInfo?.error ? <span className="is-warning">Update check failed</span> : null}
+              {updateInstallPending ? <span>Downloading update...</span> : null}
+              {updateInstallInfo?.started ? <span>Update installer started</span> : null}
+              {updateInstallInfo?.error ? <span className="is-warning">Update install failed: {updateInstallInfo.error}</span> : null}
               <span>{status.totalPlots} plots</span>
             <span>{status.matchedCsvs} CSV matched</span>
             <span className={status.missingCsvs ? "is-warning" : ""}>{status.missingCsvs} missing CSV</span>

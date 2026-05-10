@@ -263,14 +263,47 @@ describe("App explorer", () => {
     );
 
     expect(screen.getByText("Update 0.2.0")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Install MPLGallery 0.2.0" }));
+    const updateButton = screen.getByRole("button", { name: "Install MPLGallery 0.2.0" });
+    fireEvent.click(updateButton);
     expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
       event: expect.objectContaining({
         type: "install_update",
         download_url: "https://github.com/tannerpolley/mplgallery/releases/download/v0.2.0/mplgallery.zip",
       }),
     });
+    expect(updateButton).toBeDisabled();
+    expect(screen.getAllByText("Downloading update...").length).toBeGreaterThan(0);
     expect(openMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces update installer failures in status", () => {
+    render(
+      <App
+        payload={payload({
+          appInfo: {
+            name: "MPLGallery",
+            version: "0.1.0",
+            appId: "Tanner.MPLGallery",
+            update: {
+              checked: true,
+              available: true,
+              currentVersion: "0.1.0",
+              latestVersion: "0.2.0",
+              releaseUrl: "https://github.com/tannerpolley/mplgallery/releases/tag/v0.2.0",
+              downloadUrl: "https://github.com/tannerpolley/mplgallery/releases/download/v0.2.0/mplgallery.zip",
+              error: null,
+            },
+            updateInstall: {
+              started: false,
+              error: "download failed",
+            },
+            canInstallUpdates: true,
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Update install failed: download failed")).toBeInTheDocument();
   });
 
   it("filters the explorer to CSV files or figure files from the workspace controls", () => {

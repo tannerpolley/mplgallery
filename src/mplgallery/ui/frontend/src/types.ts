@@ -250,6 +250,7 @@ export type AppInfo = {
   appId?: string;
   canInstallUpdates?: boolean;
   update?: UpdateInfo;
+  updateInstall?: UpdateInstallInfo;
 };
 
 export type UpdateInfo = {
@@ -259,5 +260,11 @@ export type UpdateInfo = {
   latestVersion?: string | null;
   releaseUrl?: string | null;
   downloadUrl?: string | null;
+  error?: string | null;
+};
+
+export type UpdateInstallInfo = {
+  started?: boolean;
+  path?: string | null;
   error?: string | null;
 };

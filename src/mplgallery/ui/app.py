@@ -88,7 +88,7 @@ def main() -> None:
         recent_roots=settings.recent_roots,
         root_error=st.session_state.get("mplgallery_root_error"),
         show_root_chooser=args.choose_root,
-        app_info=_cached_app_info(),
+        app_info=_app_info(),
     )
     result = render_plot_browser(payload)
     if process_component_event(event=result.event, project_root=project_root, launch_root=launch_root):
@@ -177,6 +177,14 @@ def _render_host_chrome(*, project_root: Path, launch_root: Path, settings) -> b
 @st.cache_data(ttl=3600, show_spinner=False)
 def _cached_app_info() -> dict[str, object]:
     return _desktop_update_payload()
+
+
+def _app_info() -> dict[str, object]:
+    app_info = dict(_cached_app_info())
+    install_status = st.session_state.get("mplgallery_update_install_status")
+    if isinstance(install_status, dict):
+        app_info["updateInstall"] = install_status
+    return app_info
 
 
 def _app_icon_path() -> str:
