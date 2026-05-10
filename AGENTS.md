@@ -103,6 +103,19 @@ analysis_name/
 - Do not leave major feature work only on `main` at the same version as the
   currently published GitHub release unless the user explicitly asks to defer
   packaging or release publication.
+- The update button only appears when GitHub Releases has a newer semantic
+  version than the installed app. If a feature was pushed but not released, the
+  installed app will correctly report no update.
+- Validate update-button behavior from the frozen Windows executable, not only
+  `uv run mplgallery serve`, because install actions depend on
+  `sys.frozen == True` and use the packaged Windows update helper.
+- For update-button QA, use a controlled fake latest-release endpoint when
+  needed, click the button in Browser, and confirm the UI shows either
+  `Downloading update...`, `Update installer started`, or a visible
+  `Update install failed: ...` status instead of appearing inert.
+- Build and release the Windows ZIP asset alongside the setup EXE. The app
+  updater downloads the ZIP because it contains `mplgallery-desktop.exe`,
+  `install_windows_app.ps1`, and wrapper files needed for in-app updates.
 
 ## Commands
 
