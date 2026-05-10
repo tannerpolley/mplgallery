@@ -91,6 +91,19 @@ analysis_name/
   dashboard.
 - Avoid implementing all milestones in one pass.
 
+## Release Rules
+
+- When a user-facing app feature, installer behavior, update behavior, or
+  desktop distribution change is committed to `main`, treat it as release-bound
+  by default.
+- For release-bound changes, bump the project version in both `pyproject.toml`
+  and `src/mplgallery/__init__.py`, rebuild the Windows distribution, tag the
+  version, and publish GitHub release assets so installed Windows apps can find
+  the update automatically.
+- Do not leave major feature work only on `main` at the same version as the
+  currently published GitHub release unless the user explicitly asks to defer
+  packaging or release publication.
+
 ## Commands
 
 Run these before considering a task complete:
