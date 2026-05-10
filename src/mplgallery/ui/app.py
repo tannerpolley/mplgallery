@@ -49,8 +49,13 @@ def main() -> None:
     args = _parse_args()
     launch_root = args.project_root.expanduser().resolve()
     settings = load_user_settings()
-    project_root = _active_project_root(launch_root, choose_root=args.choose_root, settings=settings)
-    if project_root.is_dir():
+    project_root = _active_project_root(
+        launch_root,
+        choose_root=args.choose_root,
+        blank_start=args.blank_start,
+        settings=settings,
+    )
+    if project_root is not None and project_root.is_dir():
         settings = remember_recent_root(settings, project_root)
         save_user_settings(settings)
     st.set_page_config(
@@ -63,53 +68,80 @@ def main() -> None:
         st.rerun()
         return
 
-    try:
-        index = _load_index(
-            project_root,
-            include_artifacts=args.include_artifacts,
-            image_library_mode=args.image_library,
-        )
-    except Exception as exc:  # pragma: no cover - Streamlit display path
-        st.error(f"Unable to scan project: {exc}")
-        return
+    if project_root is None:
+        records: list[PlotRecord] = []
+        datasets = []
+        browse_mode = "plot-set-manager"
+    else:
+        try:
+            index = _load_index(
+                project_root,
+                include_artifacts=args.include_artifacts,
+                image_library_mode=args.image_library,
+            )
+        except Exception as exc:  # pragma: no cover - Streamlit display path
+            st.error(f"Unable to scan project: {exc}")
+            return
 
-    records = _render_records(project_root, index.records)
-    st.session_state["mplgallery_records"] = records
-    st.session_state["mplgallery_datasets"] = index.datasets
+        records = _render_records(project_root, index.records)
+        datasets = index.datasets
+        browse_mode = index.browse_mode
+        st.session_state["mplgallery_records"] = records
+        st.session_state["mplgallery_datasets"] = datasets
     selected_plot_id = selected_plot_id_from_state_or_query(records)
     payload = build_component_payload(
-        project_root=project_root,
+        project_root=project_root or launch_root,
+        active_root=project_root,
         records=records,
-        datasets=index.datasets,
-        browse_mode=index.browse_mode,
+        datasets=datasets,
+        browse_mode=browse_mode,
         selected_plot_id=selected_plot_id,
         errors=component_errors(),
         launch_root=launch_root,
-        recent_roots=settings.recent_roots,
+        recent_roots=settings.recent_roots if settings.remember_recent_projects else (),
         root_error=st.session_state.get("mplgallery_root_error"),
         show_root_chooser=args.choose_root,
         app_info=_app_info(),
+        user_settings=settings,
     )
     result = render_plot_browser(payload)
-    if process_component_event(event=result.event, project_root=project_root, launch_root=launch_root):
+    if process_component_event(event=result.event, project_root=project_root or launch_root, launch_root=launch_root):
         st.rerun()
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", type=Path, default=Path("."))
+    parser.add_argument("--blank-start", action="store_true", default=False)
     parser.add_argument("--choose-root", action="store_true")
     parser.add_argument("--include-artifacts", action="store_true", default=True)
     parser.add_argument("--image-library", action="store_true", default=False)
     return parser.parse_args()
 
 
-def _active_project_root(launch_root: Path, *, choose_root: bool, settings) -> Path:
+def _active_project_root(
+    launch_root: Path,
+    *,
+    choose_root: bool,
+    blank_start: bool,
+    settings,
+) -> Path | None:
     if "mplgallery_active_project_root" not in st.session_state:
-        st.session_state["mplgallery_active_project_root"] = str(
-            resolve_initial_root(launch_root, settings, choose_root=choose_root)
+        result = resolve_initial_root(
+            launch_root,
+            settings,
+            choose_root=choose_root,
+            blank_start=blank_start,
         )
-    return Path(st.session_state["mplgallery_active_project_root"]).expanduser().resolve()
+        st.session_state["mplgallery_active_project_root"] = (
+            str(result.active_root) if result.active_root is not None else ""
+        )
+        if result.error:
+            st.session_state["mplgallery_root_error"] = result.error
+    active_root = str(st.session_state["mplgallery_active_project_root"] or "")
+    if not active_root:
+        return None
+    return Path(active_root).expanduser().resolve()
 
 
 def _render_host_chrome(*, project_root: Path, launch_root: Path, settings) -> bool:

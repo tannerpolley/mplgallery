@@ -343,7 +343,7 @@ def run_app(
 
 @app.command()
 def desktop(
-    project_root: Path = typer.Argument(Path("."), help="Project directory to open."),
+    project_root: Path | None = typer.Argument(None, help="Project directory to open."),
     port: int | None = typer.Option(None, help="Preferred local port."),
     choose_root: bool = typer.Option(
         False,
@@ -369,7 +369,7 @@ def desktop(
     height: int = typer.Option(1000, help="Initial native window height."),
 ) -> None:
     """Launch MPLGallery as a native desktop window on Windows."""
-    resolved_root = project_root.expanduser().resolve()
+    resolved_root = project_root.expanduser().resolve() if project_root is not None else None
     if browser:
         raise typer.Exit(
             _run_streamlit_app(
@@ -398,7 +398,7 @@ def desktop(
 
 
 def _run_streamlit_app(
-    project_root: Path,
+    project_root: Path | None,
     *,
     port: int | None,
     include_artifacts: bool,
@@ -406,7 +406,6 @@ def _run_streamlit_app(
     choose_root: bool,
     open_browser: bool = False,
 ) -> int:
-    resolved_root = project_root.expanduser().resolve()
     chosen_port = 8501 if open_browser and port is None else port
     app_path = Path(__file__).parent / "ui" / "app.py"
     command = [
@@ -420,7 +419,11 @@ def _run_streamlit_app(
     ]
     if chosen_port is not None:
         command.append(f"--server.port={chosen_port}")
-    command.extend(["--", "--project-root", str(resolved_root)])
+    command.append("--")
+    if project_root is None:
+        command.append("--blank-start")
+    else:
+        command.extend(["--project-root", str(project_root.expanduser().resolve())])
     if choose_root:
         command.append("--choose-root")
     if include_artifacts:

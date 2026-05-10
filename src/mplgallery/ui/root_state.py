@@ -18,11 +18,24 @@ def resolve_initial_root(
     settings: UserSettings,
     *,
     choose_root: bool,
-) -> Path:
+    blank_start: bool = False,
+) -> RootChangeResult:
     normalized_launch = launch_root.expanduser().resolve(strict=False)
-    if choose_root and settings.last_active_root is not None and settings.last_active_root.is_dir():
-        return settings.last_active_root.resolve()
-    return normalized_launch
+    if (
+        (choose_root or settings.restore_last_project_on_startup)
+        and settings.last_active_root is not None
+    ):
+        if settings.last_active_root.is_dir():
+            return RootChangeResult(settings.last_active_root.resolve(), settings)
+        if settings.restore_last_project_on_startup:
+            return RootChangeResult(
+                None,
+                settings,
+                error=f"Last project is not available: {settings.last_active_root}",
+            )
+    if blank_start:
+        return RootChangeResult(None, settings)
+    return RootChangeResult(normalized_launch, settings)
 
 
 def change_active_root(root_path: str, settings: UserSettings) -> RootChangeResult:

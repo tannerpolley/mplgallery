@@ -24,6 +24,10 @@ function payload(overrides: Partial<BrowserPayload> = {}): BrowserPayload {
       error: null,
       showRootChooser: false,
     },
+    userSettings: {
+      rememberRecentProjects: true,
+      restoreLastProjectOnStartup: false,
+    },
     selectedPlotId: null,
     datasets: [
       {
@@ -187,6 +191,36 @@ describe("App explorer", () => {
     expect(screen.queryByRole("img", { name: "alpha.svg" })).not.toBeInTheDocument();
   });
 
+  it("starts in a blank project state without preloaded files", () => {
+    render(
+      <App
+        payload={payload({
+          projectRoot: "",
+          rootContext: {
+            activeRoot: "",
+            launchRoot: "C:/Users/Tanner/AppData/Local/Programs/MPLGallery",
+            recentRoots: ["C:/Users/Tanner/Documents/git/other-analysis"],
+            error: null,
+            showRootChooser: true,
+          },
+          datasets: [],
+          records: [],
+          files: [],
+          plotSets: [],
+          folderView: { nodes: [], rootId: ".", defaultSelectedPath: "." },
+          filesView: { rows: [] },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("No project open")).toBeInTheDocument();
+    expect(screen.getByText("Open a project folder to start browsing plots and images.")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Files" })).not.toBeInTheDocument();
+    expect(screen.queryByText("alpha.csv")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Open Project..." }).length).toBeGreaterThan(0);
+    expect(screen.getByText("other-analysis")).toBeInTheDocument();
+  });
+
   it("renders compact folder-only navigation and keeps files in the files pane", () => {
     render(<App payload={payload()} />);
 
@@ -274,6 +308,29 @@ describe("App explorer", () => {
     expect(updateButton).toBeDisabled();
     expect(screen.getAllByText("Downloading update...").length).toBeGreaterThan(0);
     expect(openMock).not.toHaveBeenCalled();
+  });
+
+  it("opens settings and emits project memory setting events", () => {
+    render(<App payload={payload()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Remember recent projects")).toBeChecked();
+    expect(screen.getByLabelText("Restore last project on startup")).not.toBeChecked();
+
+    fireEvent.click(screen.getByLabelText("Restore last project on startup"));
+    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
+      event: expect.objectContaining({
+        type: "set_user_setting",
+        setting_key: "restore_last_project_on_startup",
+        setting_value: true,
+      }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear recent projects" }));
+    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
+      event: expect.objectContaining({ type: "clear_recent_roots" }),
+    });
   });
 
   it("surfaces update installer failures in status", () => {

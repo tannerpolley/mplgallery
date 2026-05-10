@@ -80,6 +80,10 @@ const emptyPayload: BrowserPayload = {
     name: "MPLGallery",
     version: "0.1.0",
   },
+  userSettings: {
+    rememberRecentProjects: true,
+    restoreLastProjectOnStartup: false,
+  },
   rootContext: {
     activeRoot: "",
     launchRoot: "",
@@ -123,6 +127,7 @@ const layoutBounds = {
 function App(props: StreamlitProps) {
   const payload = props.payload ?? emptyPayload;
   const appInfo = payload.appInfo ?? emptyPayload.appInfo;
+  const userSettings = payload.userSettings ?? emptyPayload.userSettings;
   const updateInfo = appInfo?.update ?? null;
   const updateInstallInfo = appInfo?.updateInstall ?? null;
   const canInstallUpdate = Boolean(appInfo?.canInstallUpdates && updateInfo?.downloadUrl);
@@ -136,6 +141,8 @@ function App(props: StreamlitProps) {
     error: null,
     showRootChooser: false,
   };
+  const hasActiveRoot = Boolean(rootContext.activeRoot.trim());
+  const activeRootLabel = hasActiveRoot ? projectRootName(rootContext.activeRoot) : "No project";
   const [selectedPlotId, setSelectedPlotId] = useState<string | null>(payload.selectedPlotId ?? null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
   const [selectedPlotSetId, setSelectedPlotSetId] = useState<string | null>(null);
@@ -161,6 +168,7 @@ function App(props: StreamlitProps) {
   const [filesCollapsed, setFilesCollapsed] = useState(false);
   const [draftPreferencesDatasetId, setDraftPreferencesDatasetId] = useState<string | null>(null);
   const [rootMenuOpen, setRootMenuOpen] = useState(Boolean(rootContext.showRootChooser));
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [rootDraft, setRootDraft] = useState(rootContext.activeRoot);
   const [galleryLayout, setGalleryLayout] = useState<GalleryLayoutMode>("grid");
   const [checkedPlotSetOrder, setCheckedPlotSetOrder] = useState<string[]>([]);
@@ -529,6 +537,26 @@ function App(props: StreamlitProps) {
     });
   }
 
+  function setUserSetting(settingKey: string, settingValue: boolean) {
+    Streamlit.setComponentValue({
+      event: {
+        id: eventId("set_user_setting"),
+        type: "set_user_setting",
+        setting_key: settingKey,
+        setting_value: settingValue,
+      },
+    });
+  }
+
+  function clearRecentRoots() {
+    Streamlit.setComponentValue({
+      event: {
+        id: eventId("clear_recent_roots"),
+        type: "clear_recent_roots",
+      },
+    });
+  }
+
   function refreshIndex() {
     Streamlit.setComponentValue({
       event: {
@@ -610,7 +638,10 @@ function App(props: StreamlitProps) {
   } as CSSProperties;
 
   return (
-    <div className={`mg-shell ${treeCollapsed ? "is-tree-collapsed" : ""}`} style={shellStyle}>
+    <div
+      className={`mg-shell ${treeCollapsed ? "is-tree-collapsed" : ""} ${hasActiveRoot ? "" : "is-no-project"}`}
+      style={shellStyle}
+    >
       <header className="mg-appbar" aria-label="MPLGallery app controls">
         <div className="mg-brand">MPLGallery</div>
         <div className="mg-project-control">
@@ -618,11 +649,11 @@ function App(props: StreamlitProps) {
             type="button"
             className="mg-project-button"
             aria-expanded={rootMenuOpen}
-            aria-label={`Project root ${projectRootName(rootContext.activeRoot)}`}
+            aria-label={`Project root ${activeRootLabel}`}
             onClick={() => setRootMenuOpen((current) => !current)}
           >
             <Folder aria-hidden="true" size={16} />
-            <span>{projectRootName(rootContext.activeRoot)}</span>
+            <span>{activeRootLabel}</span>
             <ChevronDown aria-hidden="true" size={14} />
           </button>
           {rootMenuOpen ? (
@@ -714,15 +745,69 @@ function App(props: StreamlitProps) {
             <span className={status.renderErrors ? "is-warning" : ""}>{status.renderErrors} render errors</span>
           </div>
         </details>
-        <button type="button" className="mg-appbar-button is-iconish">
-          <Settings aria-hidden="true" size={16} />
-          Settings
-        </button>
+        <div className="mg-settings-control">
+          <button
+            type="button"
+            className="mg-appbar-button is-iconish"
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen((current) => !current)}
+          >
+            <Settings aria-hidden="true" size={16} />
+            Settings
+          </button>
+          {settingsOpen ? (
+            <div className="mg-settings-popover" role="dialog" aria-label="Settings">
+              <label className="mg-setting-row">
+                <input
+                  type="checkbox"
+                  checked={userSettings?.rememberRecentProjects ?? true}
+                  onChange={(event) => setUserSetting("remember_recent_projects", event.target.checked)}
+                />
+                <span>Remember recent projects</span>
+              </label>
+              <label className="mg-setting-row">
+                <input
+                  type="checkbox"
+                  checked={userSettings?.restoreLastProjectOnStartup ?? false}
+                  onChange={(event) => setUserSetting("restore_last_project_on_startup", event.target.checked)}
+                />
+                <span>Restore last project on startup</span>
+              </label>
+              <button type="button" className="mg-settings-action" onClick={clearRecentRoots}>
+                Clear recent projects
+              </button>
+            </div>
+          ) : null}
+        </div>
         <button type="button" className="mg-appbar-button is-iconish">
           <HelpCircle aria-hidden="true" size={16} />
           Help
         </button>
       </header>
+      {!hasActiveRoot ? (
+        <main className="mg-workspace mg-empty-workspace" aria-label="Project workspace">
+          <section className="mg-empty-project" aria-label="No project selected">
+            <h1>No project open</h1>
+            <p>Open a project folder to start browsing plots and images.</p>
+            {rootContext.error ? <div className="mg-root-error">{rootContext.error}</div> : null}
+            <button type="button" className="mg-appbar-button" onClick={browseProjectRoot}>
+              <FolderOpen aria-hidden="true" size={16} />
+              Open Project...
+            </button>
+            {rootContext.recentRoots.length ? (
+              <div className="mg-empty-recents" aria-label="Recent projects">
+                <div className="mg-root-recents-title">Recent projects</div>
+                {rootContext.recentRoots.slice(0, 5).map((root) => (
+                  <button type="button" key={root} title={root} onClick={() => changeProjectRoot(root)}>
+                    {projectRootName(root)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </main>
+      ) : (
+        <>
       <aside className="mg-tree-panel mg-left-workspace" aria-label="Plot set workspace">
         <div className="mg-tree-head">
           {treeCollapsed ? null : <div className="mg-panel-title">Workspace</div>}
@@ -922,6 +1007,8 @@ function App(props: StreamlitProps) {
           </section>
         </div>
       </main>
+        </>
+      )}
 
       {maximizedPlotId && maximizedRecord ? (
         <PlotLookModal

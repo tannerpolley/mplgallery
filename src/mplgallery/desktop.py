@@ -21,7 +21,7 @@ APP_USER_MODEL_ID = "Tanner.MPLGallery"
 
 
 def launch_desktop_app(
-    project_root: Path,
+    project_root: Path | None = None,
     *,
     port: int | None = None,
     choose_root: bool = False,
@@ -39,7 +39,7 @@ def launch_desktop_app(
             "Install with: uv sync --extra desktop"
         ) from exc
 
-    resolved_root = project_root.expanduser().resolve()
+    resolved_root = project_root.expanduser().resolve() if project_root is not None else None
     server_port = port or _find_free_port()
     server_process = _start_streamlit_server(
         resolved_root,
@@ -70,7 +70,8 @@ def gui_main() -> None:
     parser.add_argument("--internal-streamlit", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--self-test-out", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--smoke-browser-launch", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("project_root", nargs="?", default=".", help="Project directory to open.")
+    parser.add_argument("--blank-start", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("project_root", nargs="?", default=None, help="Project directory to open.")
     parser.add_argument("--port", type=int, default=None, help="Preferred local port.")
     parser.add_argument("--choose-root", action="store_true", help="Start with the root chooser emphasized.")
     parser.add_argument(
@@ -102,11 +103,12 @@ def gui_main() -> None:
             "project_root": args.project_root,
         },
     )
+    project_root = Path(args.project_root) if args.project_root is not None else None
     if args.internal_streamlit:
         _trace("gui_main:internal_streamlit")
         raise SystemExit(
             _run_internal_streamlit(
-                Path(args.project_root),
+                project_root,
                 port=args.port or 8501,
                 choose_root=args.choose_root,
                 include_artifacts=args.include_artifacts,
@@ -117,7 +119,7 @@ def gui_main() -> None:
         _trace("gui_main:smoke")
         raise SystemExit(
             _smoke_browser_launch(
-                Path(args.project_root),
+                project_root,
                 port=args.port,
                 choose_root=args.choose_root,
                 include_artifacts=args.include_artifacts,
@@ -132,7 +134,7 @@ def gui_main() -> None:
     _trace("gui_main:launch")
     raise SystemExit(
         launch_desktop_app(
-            Path(args.project_root),
+            project_root,
             port=args.port,
             choose_root=args.choose_root,
             include_artifacts=args.include_artifacts,
@@ -144,7 +146,7 @@ def gui_main() -> None:
 
 
 def _start_streamlit_server(
-    project_root: Path,
+    project_root: Path | None,
     *,
     port: int,
     choose_root: bool,
@@ -174,14 +176,18 @@ def _start_streamlit_server(
 
 def _streamlit_command(
     *,
-    project_root: Path,
+    project_root: Path | None,
     port: int,
     choose_root: bool,
     include_artifacts: bool,
     image_library: bool,
 ) -> list[str]:
     if getattr(sys, "frozen", False):
-        command = [sys.executable, "--internal-streamlit", str(project_root)]
+        command = [sys.executable, "--internal-streamlit"]
+        if project_root is not None:
+            command.append(str(project_root))
+        else:
+            command.append("--blank-start")
         command.append(f"--port={port}")
         if choose_root:
             command.append("--choose-root")
@@ -203,9 +209,11 @@ def _streamlit_command(
         f"--server.port={port}",
         "--browser.gatherUsageStats=false",
         "--",
-        "--project-root",
-        str(project_root),
     ]
+    if project_root is not None:
+        command.extend(["--project-root", str(project_root)])
+    else:
+        command.append("--blank-start")
     if choose_root:
         command.append("--choose-root")
     if include_artifacts:
@@ -269,7 +277,7 @@ def _streamlit_app_path() -> Path:
 
 
 def _run_internal_streamlit(
-    project_root: Path,
+    project_root: Path | None,
     *,
     port: int,
     choose_root: bool,
@@ -289,9 +297,11 @@ def _run_internal_streamlit(
         f"--server.port={port}",
         "--browser.gatherUsageStats=false",
         "--",
-        "--project-root",
-        str(project_root.expanduser().resolve()),
     ]
+    if project_root is not None:
+        argv.extend(["--project-root", str(project_root.expanduser().resolve())])
+    else:
+        argv.append("--blank-start")
     if choose_root:
         argv.append("--choose-root")
     if include_artifacts:
@@ -344,7 +354,7 @@ def _write_self_test(output_path: Path) -> None:
 
 
 def _smoke_browser_launch(
-    project_root: Path,
+    project_root: Path | None,
     *,
     port: int | None,
     choose_root: bool,
@@ -352,7 +362,7 @@ def _smoke_browser_launch(
     image_library: bool,
     output_path: Path | None,
 ) -> int:
-    resolved_root = project_root.expanduser().resolve()
+    resolved_root = project_root.expanduser().resolve() if project_root is not None else None
     server_port = port or _find_free_port()
     _trace("smoke_browser_launch:start", {"project_root": str(resolved_root), "port": server_port})
     server_process = _start_streamlit_server(

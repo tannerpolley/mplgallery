@@ -42,6 +42,40 @@ def test_recent_roots_are_persisted_deduplicated_ordered_and_capped(tmp_path: Pa
     assert loaded == settings
 
 
+def test_settings_persist_project_memory_preferences(tmp_path: Path) -> None:
+    settings = UserSettings(
+        remember_recent_projects=False,
+        restore_last_project_on_startup=True,
+    )
+    path = tmp_path / "settings.json"
+
+    save_user_settings(settings, path=path)
+
+    loaded = load_user_settings(path=path)
+    assert loaded.remember_recent_projects is False
+    assert loaded.restore_last_project_on_startup is True
+
+
+def test_legacy_settings_default_project_memory_preferences(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "recent_roots": [str(root)],
+                "last_active_root": str(root),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_user_settings(path=path)
+
+    assert loaded.remember_recent_projects is True
+    assert loaded.restore_last_project_on_startup is False
+
+
 def test_invalid_settings_json_falls_back_safely(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     path.write_text("{not-json", encoding="utf-8")
@@ -79,15 +113,92 @@ def test_root_selection_accepts_existing_directory_and_rejects_missing_path(tmp_
     assert missing.settings == result.settings
 
 
-def test_resolve_initial_root_uses_recent_only_when_choose_root_is_requested(tmp_path: Path) -> None:
+def test_resolve_initial_root_opens_explicit_project_path(tmp_path: Path) -> None:
     launch_root = tmp_path / "launch"
     recent_root = tmp_path / "recent"
     launch_root.mkdir()
     recent_root.mkdir()
     settings = remember_recent_root(UserSettings(), recent_root)
 
-    assert resolve_initial_root(launch_root, settings, choose_root=False) == launch_root.resolve()
-    assert resolve_initial_root(launch_root, settings, choose_root=True) == recent_root.resolve()
+    result = resolve_initial_root(
+        launch_root,
+        settings,
+        choose_root=False,
+        blank_start=False,
+    )
+
+    assert result.active_root == launch_root.resolve()
+    assert result.error is None
+
+
+def test_resolve_initial_root_uses_blank_start_by_default(tmp_path: Path) -> None:
+    launch_root = tmp_path / "launch"
+    recent_root = tmp_path / "recent"
+    launch_root.mkdir()
+    recent_root.mkdir()
+    settings = remember_recent_root(UserSettings(), recent_root)
+
+    result = resolve_initial_root(
+        launch_root,
+        settings,
+        choose_root=False,
+        blank_start=True,
+    )
+
+    assert result.active_root is None
+    assert result.error is None
+
+
+def test_resolve_initial_root_restores_last_project_when_enabled(tmp_path: Path) -> None:
+    launch_root = tmp_path / "launch"
+    recent_root = tmp_path / "recent"
+    launch_root.mkdir()
+    recent_root.mkdir()
+    settings = remember_recent_root(
+        UserSettings(restore_last_project_on_startup=True),
+        recent_root,
+    )
+
+    result = resolve_initial_root(
+        launch_root,
+        settings,
+        choose_root=False,
+        blank_start=True,
+    )
+
+    assert result.active_root == recent_root.resolve()
+    assert result.error is None
+
+
+def test_resolve_initial_root_warns_when_restored_project_is_missing(tmp_path: Path) -> None:
+    launch_root = tmp_path / "launch"
+    missing_root = tmp_path / "missing"
+    launch_root.mkdir()
+    settings = UserSettings(
+        last_active_root=missing_root,
+        restore_last_project_on_startup=True,
+    )
+
+    result = resolve_initial_root(
+        launch_root,
+        settings,
+        choose_root=False,
+        blank_start=True,
+    )
+
+    assert result.active_root is None
+    assert result.error is not None
+    assert "Last project is not available" in result.error
+
+
+def test_remember_recent_root_honors_disabled_project_memory(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    settings = UserSettings(remember_recent_projects=False)
+
+    updated = remember_recent_root(settings, root)
+
+    assert updated.recent_roots == ()
+    assert updated.last_active_root is None
 
 
 def test_reset_active_root_returns_launch_root_and_persists_it(tmp_path: Path) -> None:
@@ -112,6 +223,8 @@ def test_settings_file_shape_is_plain_json(tmp_path: Path) -> None:
     assert payload == {
         "recent_roots": [str(root.resolve())],
         "last_active_root": str(root.resolve()),
+        "remember_recent_projects": True,
+        "restore_last_project_on_startup": False,
     }
 
 
@@ -192,3 +305,45 @@ def test_component_browse_root_event_reports_picker_unavailable(
     assert changed is True
     assert st.session_state["mplgallery_active_project_root"] == str(launch_root)
     assert "Folder selection was cancelled" in st.session_state["mplgallery_root_error"]
+
+
+def test_component_user_setting_event_persists_project_memory_toggle(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("MPLGALLERY_CONFIG_HOME", str(tmp_path / "config-home"))
+    st.session_state.clear()
+
+    changed = process_component_event(
+        event=ComponentEvent(
+            id="setting-toggle-1",
+            type="set_user_setting",
+            setting_key="restore_last_project_on_startup",
+            setting_value=True,
+        ),
+        project_root=tmp_path,
+        launch_root=tmp_path,
+    )
+
+    assert changed is True
+    assert load_user_settings().restore_last_project_on_startup is True
+
+
+def test_component_clear_recent_roots_event_removes_project_memory(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("MPLGALLERY_CONFIG_HOME", str(tmp_path / "config-home"))
+    root = tmp_path / "project"
+    save_user_settings(remember_recent_root(UserSettings(), root))
+    st.session_state.clear()
+
+    changed = process_component_event(
+        event=ComponentEvent(id="clear-recents-1", type="clear_recent_roots"),
+        project_root=tmp_path,
+        launch_root=tmp_path,
+    )
+
+    assert changed is True
+    assert load_user_settings().recent_roots == ()
+    assert load_user_settings().last_active_root is None

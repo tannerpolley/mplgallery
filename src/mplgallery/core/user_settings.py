@@ -14,6 +14,8 @@ MAX_RECENT_ROOTS = 8
 class UserSettings:
     recent_roots: tuple[Path, ...] = field(default_factory=tuple)
     last_active_root: Path | None = None
+    remember_recent_projects: bool = True
+    restore_last_project_on_startup: bool = False
 
 
 def settings_path() -> Path:
@@ -43,6 +45,14 @@ def load_user_settings(*, path: Path | None = None) -> UserSettings:
     return UserSettings(
         recent_roots=recent_roots[:MAX_RECENT_ROOTS],
         last_active_root=last_active_root,
+        remember_recent_projects=_bool_from_payload(
+            payload.get("remember_recent_projects"),
+            default=True,
+        ),
+        restore_last_project_on_startup=_bool_from_payload(
+            payload.get("restore_last_project_on_startup"),
+            default=False,
+        ),
     )
 
 
@@ -54,6 +64,8 @@ def save_user_settings(settings: UserSettings, *, path: Path | None = None) -> N
         "last_active_root": str(settings.last_active_root)
         if settings.last_active_root is not None
         else None,
+        "remember_recent_projects": settings.remember_recent_projects,
+        "restore_last_project_on_startup": settings.restore_last_project_on_startup,
     }
     target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -64,6 +76,11 @@ def remember_recent_root(
     *,
     max_recent_roots: int = MAX_RECENT_ROOTS,
 ) -> UserSettings:
+    if not settings.remember_recent_projects:
+        return UserSettings(
+            remember_recent_projects=settings.remember_recent_projects,
+            restore_last_project_on_startup=settings.restore_last_project_on_startup,
+        )
     normalized = _normalize_root(root)
     deduped = tuple(
         recent for recent in settings.recent_roots if _root_key(recent) != _root_key(normalized)
@@ -71,6 +88,8 @@ def remember_recent_root(
     return UserSettings(
         recent_roots=(normalized, *deduped)[:max_recent_roots],
         last_active_root=normalized,
+        remember_recent_projects=settings.remember_recent_projects,
+        restore_last_project_on_startup=settings.restore_last_project_on_startup,
     )
 
 
@@ -82,7 +101,37 @@ def forget_recent_root(settings: UserSettings, root: Path) -> UserSettings:
     last_active_root = settings.last_active_root
     if last_active_root is not None and _root_key(last_active_root) == _root_key(normalized):
         last_active_root = None
-    return UserSettings(recent_roots=recent_roots, last_active_root=last_active_root)
+    return UserSettings(
+        recent_roots=recent_roots,
+        last_active_root=last_active_root,
+        remember_recent_projects=settings.remember_recent_projects,
+        restore_last_project_on_startup=settings.restore_last_project_on_startup,
+    )
+
+
+def clear_recent_roots(settings: UserSettings) -> UserSettings:
+    return UserSettings(
+        remember_recent_projects=settings.remember_recent_projects,
+        restore_last_project_on_startup=settings.restore_last_project_on_startup,
+    )
+
+
+def update_project_memory_setting(settings: UserSettings, key: str, value: bool) -> UserSettings:
+    if key == "remember_recent_projects":
+        return UserSettings(
+            recent_roots=settings.recent_roots,
+            last_active_root=settings.last_active_root if value else None,
+            remember_recent_projects=value,
+            restore_last_project_on_startup=settings.restore_last_project_on_startup,
+        )
+    if key == "restore_last_project_on_startup":
+        return UserSettings(
+            recent_roots=settings.recent_roots,
+            last_active_root=settings.last_active_root,
+            remember_recent_projects=settings.remember_recent_projects,
+            restore_last_project_on_startup=value,
+        )
+    return settings
 
 
 def _paths_from_payload(value: Any) -> tuple[Path, ...]:
@@ -106,6 +155,10 @@ def _path_from_payload(value: Any) -> Path | None:
     if not isinstance(value, str) or not value.strip():
         return None
     return _normalize_root(Path(value))
+
+
+def _bool_from_payload(value: Any, *, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
 
 
 def _normalize_root(root: Path) -> Path:

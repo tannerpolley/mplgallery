@@ -185,6 +185,7 @@ export type BrowserPayload = {
   projectRoot: string;
   browseMode?: "plot-set-manager" | "image-library" | string;
   appInfo?: AppInfo;
+  userSettings?: UserSettings;
   rootContext?: RootContext;
   selectedPlotId?: string | null;
   datasets: DatasetRecord[];
@@ -225,6 +226,8 @@ export type ComponentEvent =
   | { id: string; type: "change_project_root"; root_path: string }
   | { id: string; type: "reset_project_root" }
   | { id: string; type: "forget_recent_root"; root_path: string }
+  | { id: string; type: "set_user_setting"; setting_key: string; setting_value: boolean }
+  | { id: string; type: "clear_recent_roots" }
   | { id: string; type: "install_update"; download_url: string };
 
 export type RootContext = {
@@ -251,6 +254,11 @@ export type AppInfo = {
   canInstallUpdates?: boolean;
   update?: UpdateInfo;
   updateInstall?: UpdateInstallInfo;
+};
+
+export type UserSettings = {
+  rememberRecentProjects: boolean;
+  restoreLastProjectOnStartup: boolean;
 };
 
 export type UpdateInfo = {

@@ -22,7 +22,14 @@ from mplgallery.core.renderer import (
     PLOT_KIND_CHOICES,
 )
 from mplgallery.core.studio import draft_csv_dataset
-from mplgallery.core.user_settings import forget_recent_root, load_user_settings, save_user_settings
+from mplgallery.core.user_settings import (
+    UserSettings,
+    clear_recent_roots,
+    forget_recent_root,
+    load_user_settings,
+    save_user_settings,
+    update_project_memory_setting,
+)
 from mplgallery.updater import install_windows_update
 from mplgallery.ui.root_state import browse_active_root, change_active_root, reset_active_root
 
@@ -87,6 +94,8 @@ class ComponentEvent(BaseModel):
         "change_project_root",
         "reset_project_root",
         "forget_recent_root",
+        "set_user_setting",
+        "clear_recent_roots",
         "install_update",
     ]
     plot_id: str | None = None
@@ -99,6 +108,8 @@ class ComponentEvent(BaseModel):
     checked: bool | None = None
     show: bool | None = None
     root_path: str | None = None
+    setting_key: str | None = None
+    setting_value: bool | None = None
     download_url: str | None = None
     redraw: RedrawMetadata | None = None
     output_format: str | None = None
@@ -125,6 +136,7 @@ def render_plot_browser(payload: dict[str, Any]) -> ComponentResult:
 def build_component_payload(
     *,
     project_root: Path,
+    active_root: Path | None = None,
     records: list[PlotRecord],
     selected_plot_id: str | None,
     datasets: list[DatasetRecord] | None = None,
@@ -136,6 +148,7 @@ def build_component_payload(
     show_root_chooser: bool = False,
     hydrated_plot_set_ids: set[str] | None = None,
     app_info: dict[str, Any] | None = None,
+    user_settings: UserSettings | None = None,
 ) -> dict[str, Any]:
     associated_plot_ids = _associated_plot_ids_by_dataset(records)
     checked_plot_set_ids = set(st.session_state.get("mplgallery_checked_plot_set_ids", []))
@@ -162,8 +175,16 @@ def build_component_payload(
         "projectRoot": str(project_root),
         "browseMode": browse_mode,
         "appInfo": app_info or {},
+        "userSettings": {
+            "rememberRecentProjects": user_settings.remember_recent_projects
+            if user_settings
+            else True,
+            "restoreLastProjectOnStartup": user_settings.restore_last_project_on_startup
+            if user_settings
+            else False,
+        },
         "rootContext": {
-            "activeRoot": str(project_root),
+            "activeRoot": str(active_root) if active_root is not None else "",
             "launchRoot": str(launch_root or project_root),
             "recentRoots": [str(root) for root in recent_roots],
             "error": root_error,
@@ -231,6 +252,14 @@ def process_component_event(
 
     if event.type == "forget_recent_root" and event.root_path:
         _forget_recent_root(event.root_path)
+        return True
+
+    if event.type == "set_user_setting" and event.setting_key and event.setting_value is not None:
+        _set_user_setting(event.setting_key, event.setting_value)
+        return True
+
+    if event.type == "clear_recent_roots":
+        _clear_recent_roots()
         return True
 
     if event.type == "refresh_index":
@@ -1016,6 +1045,16 @@ def _browse_project_root(project_root: Path) -> None:
 
 def _forget_recent_root(root_path: str) -> None:
     settings = forget_recent_root(load_user_settings(), Path(root_path))
+    save_user_settings(settings)
+
+
+def _set_user_setting(setting_key: str, setting_value: bool) -> None:
+    settings = update_project_memory_setting(load_user_settings(), setting_key, setting_value)
+    save_user_settings(settings)
+
+
+def _clear_recent_roots() -> None:
+    settings = clear_recent_roots(load_user_settings())
     save_user_settings(settings)
 
 

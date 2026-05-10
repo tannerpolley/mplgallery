@@ -72,6 +72,13 @@ summary:focus-visible {
   visibility: hidden;
 }
 
+.mg-shell.is-no-project {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "appbar"
+    "workspace";
+}
+
 .mg-appbar {
   grid-area: appbar;
   display: flex;
@@ -1016,6 +1023,108 @@ summary:focus-visible {
 }
 
 .mg-root-recent button:hover {
+  border-color: var(--mg-accent);
+  color: var(--mg-accent);
+}
+
+.mg-settings-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.mg-settings-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  border: 1px solid var(--mg-line-strong);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 18px 46px rgba(23, 32, 47, 0.16);
+  padding: 10px;
+}
+
+.mg-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  color: var(--mg-ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.mg-setting-row input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--mg-accent);
+}
+
+.mg-settings-action {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 8px;
+  border: 1px solid var(--mg-line-strong);
+  border-radius: 7px;
+  background: var(--mg-panel-soft);
+  color: var(--mg-ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.mg-settings-action:hover {
+  border-color: var(--mg-accent);
+  color: var(--mg-accent);
+}
+
+.mg-empty-workspace {
+  display: grid;
+  place-items: center;
+  padding: 36px;
+}
+
+.mg-empty-project {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  max-width: 520px;
+  text-align: center;
+}
+
+.mg-empty-project h1 {
+  margin: 0;
+  color: var(--mg-ink);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.mg-empty-project p {
+  margin: 0 0 4px;
+  color: var(--mg-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.mg-empty-recents {
+  display: grid;
+  gap: 7px;
+  width: min(360px, 100%);
+  margin-top: 8px;
+}
+
+.mg-empty-recents button {
+  min-height: 32px;
+  border: 1px solid var(--mg-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--mg-ink);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.mg-empty-recents button:hover {
   border-color: var(--mg-accent);
   color: var(--mg-accent);
 }
