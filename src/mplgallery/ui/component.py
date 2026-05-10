@@ -12,6 +12,7 @@ from typing import Any, Literal
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 from mplgallery.core.models import DatasetRecord, PlotRecord, RedrawMetadata, SeriesStyle
@@ -78,6 +79,7 @@ class ComponentEvent(BaseModel):
     id: str
     type: Literal[
         "save_redraw_metadata",
+        "save_yaml_attachment",
         "request_rerender",
         "select_dataset",
         "draft_dataset",
@@ -96,6 +98,7 @@ class ComponentEvent(BaseModel):
         "forget_recent_root",
         "set_user_setting",
         "clear_recent_roots",
+        "set_browse_mode",
         "install_update",
     ]
     plot_id: str | None = None
@@ -110,7 +113,10 @@ class ComponentEvent(BaseModel):
     root_path: str | None = None
     setting_key: str | None = None
     setting_value: bool | None = None
+    browse_mode: str | None = None
     download_url: str | None = None
+    attachment_path: str | None = None
+    yaml_text: str | None = None
     redraw: RedrawMetadata | None = None
     output_format: str | None = None
 
@@ -265,6 +271,13 @@ def process_component_event(
     if event.type == "refresh_index":
         return True
 
+    if event.type == "set_browse_mode" and event.browse_mode:
+        if event.browse_mode in {"plot-set-manager", "image-library"}:
+            _clear_plot_set_ui_state()
+            st.session_state["mplgallery_browse_mode"] = event.browse_mode
+            return True
+        return False
+
     if event.type == "install_update" and event.download_url:
         _install_update(event.download_url)
         return True
@@ -311,6 +324,20 @@ def process_component_event(
         else:
             _clear_plot_error(event.plot_id)
             st.toast("Plot metadata saved.")
+        return True
+
+    if event.type == "save_yaml_attachment" and event.plot_id and event.attachment_path is not None:
+        try:
+            record = _record_by_plot_id(st.session_state["mplgallery_records"], event.plot_id)
+            metadata_path = _metadata_path_for_record(project_root, record, event.attachment_path)
+            yaml.safe_load(event.yaml_text or "") or {}
+            metadata_path.write_text(event.yaml_text or "", encoding="utf-8")
+            _remove_cached_preview(project_root, record)
+        except Exception as exc:
+            _set_plot_error(event.plot_id, str(exc))
+        else:
+            _clear_plot_error(event.plot_id)
+            st.toast("YAML sidecar saved.")
         return True
 
     if event.type == "request_rerender" and event.plot_id:
@@ -670,6 +697,22 @@ def _text_preview(path: Path, *, limit: int = 5000) -> str | None:
     except OSError:
         return None
     return text[:limit]
+
+
+def _metadata_path_for_record(project_root: Path, record: PlotRecord, attachment_path: str) -> Path:
+    normalized = attachment_path.replace("\\", "/")
+    root = project_root.resolve()
+    for candidate in record.metadata_files:
+        resolved = candidate if candidate.is_absolute() else project_root / candidate
+        resolved = resolved.resolve()
+        try:
+            relative = resolved.relative_to(root).as_posix()
+        except ValueError:
+            relative = candidate.as_posix().replace("\\", "/")
+        if candidate.as_posix().replace("\\", "/") == normalized or relative == normalized:
+            resolved.relative_to(root)
+            return resolved
+    raise ValueError(f"Metadata sidecar is not attached to {record.image.relative_path.name}: {attachment_path}")
 
 
 def _text_preview_truncated(path: Path, *, limit: int = 5000) -> bool:

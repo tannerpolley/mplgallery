@@ -68,16 +68,17 @@ def main() -> None:
         st.rerun()
         return
 
+    image_library_mode = _active_browse_mode(args.image_library) == "image-library"
     if project_root is None:
         records: list[PlotRecord] = []
         datasets = []
-        browse_mode = "plot-set-manager"
+        browse_mode = "image-library" if image_library_mode else "plot-set-manager"
     else:
         try:
             index = _load_index(
                 project_root,
                 include_artifacts=args.include_artifacts,
-                image_library_mode=args.image_library,
+                image_library_mode=image_library_mode,
             )
         except Exception as exc:  # pragma: no cover - Streamlit display path
             st.error(f"Unable to scan project: {exc}")
@@ -107,6 +108,12 @@ def main() -> None:
     result = render_plot_browser(payload)
     if process_component_event(event=result.event, project_root=project_root or launch_root, launch_root=launch_root):
         st.rerun()
+
+
+def _active_browse_mode(default_image_library: bool) -> str:
+    default_mode = "image-library" if default_image_library else "plot-set-manager"
+    mode = st.session_state.setdefault("mplgallery_browse_mode", default_mode)
+    return mode if mode in {"plot-set-manager", "image-library"} else default_mode
 
 
 def _parse_args() -> argparse.Namespace:

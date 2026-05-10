@@ -67,7 +67,11 @@ def test_streamlit_env_disables_development_mode(monkeypatch) -> None:
 
 
 def test_update_check_payload_uses_packaged_app_metadata(monkeypatch) -> None:
-    monkeypatch.setattr(desktop, "check_for_updates", lambda: UpdateCheckResult(checked=True, available=False))
+    monkeypatch.setattr(
+        desktop,
+        "check_for_updates",
+        lambda **_: UpdateCheckResult(checked=True, available=False),
+    )
     monkeypatch.setattr(desktop.os, "name", "nt")
     monkeypatch.setattr(desktop.sys, "frozen", True, raising=False)
 
@@ -77,3 +81,24 @@ def test_update_check_payload_uses_packaged_app_metadata(monkeypatch) -> None:
     assert payload["version"] == desktop.APP_VERSION
     assert payload["canInstallUpdates"] is True
     assert payload["update"]["checked"] is True
+
+
+def test_update_check_payload_skips_network_for_dev_mode(monkeypatch) -> None:
+    def fail_check(**_: object) -> UpdateCheckResult:
+        raise AssertionError("dev mode should not check GitHub during startup")
+
+    monkeypatch.setattr(desktop, "check_for_updates", fail_check)
+    monkeypatch.setattr(desktop.os, "name", "nt")
+    monkeypatch.delattr(desktop.sys, "frozen", raising=False)
+
+    payload = desktop._desktop_update_payload()
+
+    assert payload["canInstallUpdates"] is False
+    assert payload["update"]["checked"] is False
+
+
+def test_loading_html_is_branded_startup_shell() -> None:
+    html = desktop._loading_html()
+
+    assert "Opening MPLGallery" in html
+    assert "Starting the local plotting workspace" in html

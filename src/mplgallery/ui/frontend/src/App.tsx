@@ -6,12 +6,14 @@ import {
   type CSSProperties,
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   BarChart3,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   FileImage,
   Folder,
@@ -20,7 +22,6 @@ import {
   Info,
   RefreshCw,
   Settings,
-  Menu,
   Table2,
   FileCode2,
 } from "lucide-react";
@@ -70,8 +71,16 @@ type CsvPreviewData = {
   previewError?: string | null;
 };
 
-type FileFilter = "all" | "csv" | "figures" | "missing";
+type FileFilter = "csv" | "svg" | "png" | "yaml" | "missing";
 type GalleryLayoutMode = "grid" | "rows" | "columns";
+
+const FILE_FILTERS: Array<{ value: FileFilter; label: string; title: string }> = [
+  { value: "csv", label: "CSV", title: "Show plot sets with CSV files" },
+  { value: "svg", label: "SVG", title: "Show plot sets with SVG figures" },
+  { value: "png", label: "PNG", title: "Show plot sets with PNG figures" },
+  { value: "yaml", label: "YAML", title: "Show plot sets with Matplotlib YAML metadata" },
+  { value: "missing", label: "Missing", title: "Show CSV files that do not have figures yet" },
+];
 
 const emptyPayload: BrowserPayload = {
   projectRoot: "",
@@ -131,7 +140,10 @@ function App(props: StreamlitProps) {
   const updateInfo = appInfo?.update ?? null;
   const updateInstallInfo = appInfo?.updateInstall ?? null;
   const canInstallUpdate = Boolean(appInfo?.canInstallUpdates && updateInfo?.downloadUrl);
-  const imageLibraryMode = payload.browseMode === "image-library";
+  const [browseMode, setBrowseModeState] = useState<"plot-set-manager" | "image-library" | string>(
+    payload.browseMode ?? "plot-set-manager",
+  );
+  const imageLibraryMode = browseMode === "image-library";
   const itemNoun = imageLibraryMode ? "images" : "plot sets";
   const workspaceTitle = imageLibraryMode ? "Images" : "Plot sets";
   const rootContext = payload.rootContext ?? {
@@ -154,30 +166,37 @@ function App(props: StreamlitProps) {
     () => new Set((payload.plotSets ?? []).filter((plotSet) => plotSet.checked).map((plotSet) => plotSet.plotSetId)),
   );
   const [hasUserFilter, setHasUserFilter] = useState(false);
-  const [fileFilter, setFileFilter] = useState<FileFilter>("all");
+  const [fileFilters, setFileFilters] = useState<Set<FileFilter>>(() => new Set());
   const [showUngrouped, setShowUngrouped] = useState(false);
   const [tileSize, setTileSize] = useState(230);
+  const tileSizeRef = useRef(230);
+  const [cardSizes, setCardSizes] = useState<Record<string, number>>({});
   const [maximizedPlotId, setMaximizedPlotId] = useState<string | null>(null);
-  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [activeCardTabs, setActiveCardTabs] = useState<Record<string, string>>({});
   const [pendingDraftDatasetId, setPendingDraftDatasetId] = useState<string | null>(null);
   const [updateInstallPending, setUpdateInstallPending] = useState(false);
   const [layout, setLayout] = useState(defaultLayout);
-  const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [foldersCollapsed, setFoldersCollapsed] = useState(false);
   const [filesCollapsed, setFilesCollapsed] = useState(false);
   const [draftPreferencesDatasetId, setDraftPreferencesDatasetId] = useState<string | null>(null);
   const [rootMenuOpen, setRootMenuOpen] = useState(Boolean(rootContext.showRootChooser));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [rootDraft, setRootDraft] = useState(rootContext.activeRoot);
   const [galleryLayout, setGalleryLayout] = useState<GalleryLayoutMode>("grid");
   const [checkedPlotSetOrder, setCheckedPlotSetOrder] = useState<string[]>([]);
   const [draggingPlotSetId, setDraggingPlotSetId] = useState<string | null>(null);
   const [dropTargetPlotSetId, setDropTargetPlotSetId] = useState<string | null>(null);
+  const sidebarsAutoCollapsed = foldersCollapsed && filesCollapsed;
 
   useEffect(() => {
     setSelectedPlotId(payload.selectedPlotId ?? null);
   }, [payload.selectedPlotId]);
+
+  useEffect(() => {
+    setBrowseModeState(payload.browseMode ?? "plot-set-manager");
+  }, [payload.browseMode]);
+
   useEffect(() => {
     if (!updateInfo?.available || updateInstallInfo?.started || updateInstallInfo?.error) {
       setUpdateInstallPending(false);
@@ -194,12 +213,12 @@ function App(props: StreamlitProps) {
     setCheckedDatasetIds(new Set());
     setCheckedPlotSetIds(new Set());
     setHasUserFilter(false);
-    setExpandedCardId(null);
     setActiveCardTabs({});
     setPendingDraftDatasetId(null);
     setMaximizedPlotId(null);
     setRootDraft(rootContext.activeRoot);
     setCheckedPlotSetOrder([]);
+    setCardSizes({});
   }, [rootContext.activeRoot, payload.selectedPlotId, payload.folderView?.defaultSelectedPath]);
 
   useEffect(() => {
@@ -259,8 +278,11 @@ function App(props: StreamlitProps) {
     [payload.folderView?.nodes, plotSets, rootContext.activeRoot],
   );
   const filteredPlotSets = useMemo(
-    () => plotSets.filter((plotSet) => plotSetMatchesFolder(plotSet, selectedFolder) && plotSetMatchesFilter(plotSet, fileFilter)),
-    [plotSets, selectedFolder, fileFilter],
+    () =>
+      plotSets.filter(
+        (plotSet) => plotSetMatchesFolder(plotSet, selectedFolder) && plotSetMatchesFilters(plotSet, fileFilters),
+      ),
+    [plotSets, selectedFolder, fileFilters],
   );
   const selectedPlotRecord = selectedPlotId
     ? payload.records.find((record) => record.id === selectedPlotId) ?? null
@@ -274,9 +296,9 @@ function App(props: StreamlitProps) {
         recordsByDatasetId,
         checkedPlotSetIds,
         checkedPlotSetOrder,
-        fileFilter,
+        fileFilters,
       }),
-    [plotSets, datasetsById, recordsById, recordsByDatasetId, checkedPlotSetIds, checkedPlotSetOrder, fileFilter],
+    [plotSets, datasetsById, recordsById, recordsByDatasetId, checkedPlotSetIds, checkedPlotSetOrder, fileFilters],
   );
   const status = useMemo(() => galleryStatus(payload.records), [payload.records]);
   const noVisiblePlotsMessage = emptyGalleryMessage(
@@ -425,6 +447,18 @@ function App(props: StreamlitProps) {
     });
   }
 
+  function reorderDraggingPlotSet(draggedPlotSetId: string, targetPlotSetId: string) {
+    if (
+      checkedPlotSetIds.has(draggedPlotSetId)
+      && checkedPlotSetIds.has(targetPlotSetId)
+      && draggedPlotSetId !== targetPlotSetId
+      && dropTargetPlotSetId !== targetPlotSetId
+    ) {
+      setDropTargetPlotSetId(targetPlotSetId);
+      reorderCheckedPlotSet(draggedPlotSetId, targetPlotSetId);
+    }
+  }
+
   function selectPlot(plotId: string) {
     const record = payload.records.find((candidate) => candidate.id === plotId);
     if (record?.sourceDatasetId && datasetsById.has(record.sourceDatasetId)) {
@@ -479,7 +513,98 @@ function App(props: StreamlitProps) {
   }
 
   function updateTileSize(value: number) {
-    setTileSize(value);
+    const nextTileSize = clampNumber(value, 160, 1400);
+    const ratio = nextTileSize / Math.max(tileSizeRef.current, 1);
+    tileSizeRef.current = nextTileSize;
+    setTileSize(nextTileSize);
+    setCardSizes((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).map(([cardId, size]) => [cardId, clampNumber(size * ratio, 180, 1400)]),
+      );
+      return next;
+    });
+  }
+
+  function updateTileSizeFromInputClientX(input: HTMLInputElement, clientX: number) {
+    const min = Number(input.min) || 160;
+    const max = Number(input.max) || 1400;
+    const step = Number(input.step) || 20;
+    const rect = input.getBoundingClientRect();
+    const fraction = rect.width > 0 ? clampNumber((clientX - rect.left) / rect.width, 0, 1) : 0;
+    const rawValue = min + (max - min) * fraction;
+    const steppedValue = min + Math.round((rawValue - min) / step) * step;
+    updateTileSize(steppedValue);
+  }
+
+  function startTileSizeDrag(event: ReactPointerEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const pointerId = event.pointerId;
+    updateTileSizeFromInputClientX(input, event.clientX);
+    input.setPointerCapture?.(pointerId);
+    const onPointerMove = (moveEvent: PointerEvent) => updateTileSizeFromInputClientX(input, moveEvent.clientX);
+    const onPointerUp = () => {
+      input.releasePointerCapture?.(pointerId);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+  }
+
+  function startTileSizeMouseDrag(event: ReactMouseEvent<HTMLInputElement>) {
+    if (event.button !== 0) return;
+    const input = event.currentTarget;
+    updateTileSizeFromInputClientX(input, event.clientX);
+    const onMouseMove = (moveEvent: MouseEvent) => updateTileSizeFromInputClientX(input, moveEvent.clientX);
+    const onMouseUp = () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp, { once: true });
+  }
+
+  function toggleFileFilter(filter: FileFilter) {
+    setFileFilters((current) => {
+      const next = new Set(current);
+      if (next.has(filter)) next.delete(filter);
+      else next.add(filter);
+      return next;
+    });
+  }
+
+  function resizeCard(cardId: string, size: number) {
+    setCardSizes((current) => ({
+      ...current,
+      [cardId]: clampNumber(size, 180, 1400),
+    }));
+  }
+
+  function toggleFoldersCollapsed() {
+    setFoldersCollapsed((current) => !current);
+  }
+
+  function toggleFilesCollapsed() {
+    setFilesCollapsed((current) => !current);
+  }
+
+  function setBrowseMode(mode: "plot-set-manager" | "image-library") {
+    if (mode === browseMode) return;
+    setBrowseModeState(mode);
+    setCheckedPlotSetIds(new Set());
+    setCheckedPlotSetOrder([]);
+    setSelectedPlotSetId(null);
+    setSelectedDatasetId(null);
+    setSelectedFileId(null);
+    setActiveCardTabs({});
+    setFileFilters(new Set());
+    Streamlit.setComponentValue({
+      event: {
+        id: eventId("set_browse_mode"),
+        type: "set_browse_mode",
+        browse_mode: mode,
+      },
+    });
   }
 
   function changeProjectRoot(rootPath: string) {
@@ -633,17 +758,20 @@ function App(props: StreamlitProps) {
   }
 
   const shellStyle = {
-    "--tree-width": `${layout.treeWidth}px`,
+    "--tree-width": sidebarsAutoCollapsed ? "82px" : `${layout.treeWidth}px`,
     "--folder-pane-width": `${layout.folderPaneWidth}px`,
   } as CSSProperties;
 
   return (
     <div
-      className={`mg-shell ${treeCollapsed ? "is-tree-collapsed" : ""} ${hasActiveRoot ? "" : "is-no-project"}`}
+      className={`mg-shell ${sidebarsAutoCollapsed ? "is-sidebars-auto-collapsed" : ""} ${hasActiveRoot ? "" : "is-no-project"}`}
       style={shellStyle}
     >
       <header className="mg-appbar" aria-label="MPLGallery app controls">
-        <div className="mg-brand">MPLGallery</div>
+        <div className="mg-brand">
+          <img className="mg-brand-icon" src="./favicon.png" alt="" aria-hidden="true" />
+          <span>MPLGallery</span>
+        </div>
         <div className="mg-project-control">
           <button
             type="button"
@@ -699,6 +827,24 @@ function App(props: StreamlitProps) {
           <FolderOpen aria-hidden="true" size={16} />
           Open Project...
         </button>
+        <div className="mg-mode-switch" role="group" aria-label="Browse mode">
+          <button
+            type="button"
+            className={!imageLibraryMode ? "is-active" : ""}
+            aria-pressed={!imageLibraryMode}
+            onClick={() => setBrowseMode("plot-set-manager")}
+          >
+            Plot sets
+          </button>
+          <button
+            type="button"
+            className={imageLibraryMode ? "is-active" : ""}
+            aria-pressed={imageLibraryMode}
+            onClick={() => setBrowseMode("image-library")}
+          >
+            Pictures
+          </button>
+        </div>
         <button
           type="button"
           className="mg-appbar-button"
@@ -779,10 +925,30 @@ function App(props: StreamlitProps) {
             </div>
           ) : null}
         </div>
-        <button type="button" className="mg-appbar-button is-iconish">
-          <HelpCircle aria-hidden="true" size={16} />
-          Help
-        </button>
+        <div className="mg-help-control">
+          <button
+            type="button"
+            className="mg-appbar-button is-iconish"
+            aria-expanded={helpOpen}
+            onClick={() => setHelpOpen((current) => !current)}
+          >
+            <HelpCircle aria-hidden="true" size={16} />
+            Help
+          </button>
+          {helpOpen ? (
+            <div className="mg-help-popover" role="dialog" aria-label="Help">
+              <strong>Quick help</strong>
+              <ul>
+                <li>Open Project loads a repository or analysis folder.</li>
+                <li>Use folder rows to scope the Files pane.</li>
+                <li>Click a file row to select it and add its card.</li>
+                <li>Use file-type chips to narrow the Files pane.</li>
+                <li>Drag checked cards to reorder them, or drag the lower-right corner to resize them.</li>
+                <li>Use card tabs for CSV, SVG, PNG, and YAML views.</li>
+              </ul>
+            </div>
+          ) : null}
+        </div>
       </header>
       {!hasActiveRoot ? (
         <main className="mg-workspace mg-empty-workspace" aria-label="Project workspace">
@@ -808,28 +974,15 @@ function App(props: StreamlitProps) {
         </main>
       ) : (
         <>
-      <aside className="mg-tree-panel mg-left-workspace" aria-label="Plot set workspace">
-        <div className="mg-tree-head">
-          {treeCollapsed ? null : <div className="mg-panel-title">Workspace</div>}
-          <button
-            type="button"
-            className="mg-tree-collapse"
-            aria-expanded={!treeCollapsed}
-            aria-label={treeCollapsed ? "Show workspace sidebars" : "Hide workspace sidebars"}
-            onClick={() => setTreeCollapsed((current) => !current)}
-          >
-            <Menu aria-hidden="true" size={15} />
-          </button>
-        </div>
-        {treeCollapsed ? null : (
-          <div
-            className={`mg-left-panes ${foldersCollapsed ? "is-folders-collapsed" : ""} ${filesCollapsed ? "is-files-collapsed" : ""}`}
-          >
+          <aside className="mg-tree-panel mg-left-workspace" aria-label="Plot set workspace">
+            <div
+              className={`mg-left-panes ${foldersCollapsed ? "is-folders-collapsed" : ""} ${filesCollapsed ? "is-files-collapsed" : ""}`}
+            >
             <FoldersPane
               nodes={folderNodes}
               selectedFolder={selectedFolder}
               collapsed={foldersCollapsed}
-              onToggleCollapsed={() => setFoldersCollapsed((current) => !current)}
+              onToggleCollapsed={toggleFoldersCollapsed}
               onSelectFolder={selectFolder}
             />
             <div
@@ -848,11 +1001,14 @@ function App(props: StreamlitProps) {
               key={selectedFolder}
               plotSets={filteredPlotSets}
               itemNoun={itemNoun}
+              activeFilters={fileFilters}
               checkedPlotSetIds={checkedPlotSetIds}
               selectedPlotSetId={selectedPlotSetId}
               collapsed={filesCollapsed}
               showUngrouped={showUngrouped}
-              onToggleCollapsed={() => setFilesCollapsed((current) => !current)}
+              onToggleCollapsed={toggleFilesCollapsed}
+              onToggleFilter={toggleFileFilter}
+              onClearFilters={() => setFileFilters(new Set())}
               onToggleShowUngrouped={(show) => {
                 setShowUngrouped(show);
               }}
@@ -860,24 +1016,23 @@ function App(props: StreamlitProps) {
               onToggleChecked={togglePlotSet}
               onToggleAllChecked={(checked) => toggleVisiblePlotSets(filteredPlotSets, checked)}
             />
-          </div>
-        )}
-      </aside>
+            </div>
+          </aside>
 
-      <div
-        className="mg-resizer"
-        role="separator"
-        aria-label="Resize output tree"
-        aria-orientation="vertical"
-        aria-valuemin={layoutBounds.treeMin}
-        aria-valuemax={layoutBounds.treeMax}
-        aria-valuenow={layout.treeWidth}
-        tabIndex={0}
-        onKeyDown={resizeTreeWithKeyboard}
-        onPointerDown={startTreeResize}
-      />
+          <div
+            className="mg-resizer"
+            role="separator"
+            aria-label="Resize output tree"
+            aria-orientation="vertical"
+            aria-valuemin={layoutBounds.treeMin}
+            aria-valuemax={layoutBounds.treeMax}
+            aria-valuenow={layout.treeWidth}
+            tabIndex={sidebarsAutoCollapsed ? -1 : 0}
+            onKeyDown={resizeTreeWithKeyboard}
+            onPointerDown={sidebarsAutoCollapsed ? undefined : startTreeResize}
+          />
 
-      <main className="mg-workspace" aria-label="Plot workspace">
+          <main className="mg-workspace" aria-label="Plot workspace">
         <div className="mg-workspace-header">
           <div className="mg-workspace-heading">
             <div className="mg-workspace-title">{workspaceTitle}</div>
@@ -885,6 +1040,43 @@ function App(props: StreamlitProps) {
           </div>
           <div className="mg-header-actions">
             <span>{checkedPlotSetIds.size} selected</span>
+            <strong>{`${visibleItems.length} item${visibleItems.length === 1 ? "" : "s"}`}</strong>
+            <div className="mg-layout-mode" role="group" aria-label="Gallery layout">
+              <button
+                type="button"
+                className={galleryLayout === "grid" ? "is-active" : ""}
+                onClick={() => setGalleryLayout("grid")}
+              >
+                Grid
+              </button>
+              <button
+                type="button"
+                className={galleryLayout === "rows" ? "is-active" : ""}
+                onClick={() => setGalleryLayout("rows")}
+              >
+                Rows
+              </button>
+              <button
+                type="button"
+                className={galleryLayout === "columns" ? "is-active" : ""}
+                onClick={() => setGalleryLayout("columns")}
+              >
+                Columns
+              </button>
+            </div>
+            <label className="mg-tile-control">
+              <span>Tile size</span>
+              <input
+                type="range"
+                min="160"
+                max="1400"
+                step="20"
+                value={tileSize}
+                onChange={(event) => updateTileSize(Number(event.target.value))}
+                onPointerDown={startTileSizeDrag}
+                onMouseDown={startTileSizeMouseDrag}
+              />
+            </label>
             <button className="mg-inspector-toggle" type="button" onClick={() => setLayout(defaultLayout)}>
               Reset layout
             </button>
@@ -892,54 +1084,6 @@ function App(props: StreamlitProps) {
         </div>
         <div className="mg-workspace-body">
           <section className="mg-gallery" aria-label="Plot gallery">
-            <div className="mg-gallery-toolbar">
-              <div className="mg-gallery-toolbar-group">
-                <strong>{`${visibleItems.length} item${visibleItems.length === 1 ? "" : "s"}`}</strong>
-                <label className="mg-filter-control">
-                  Filter
-                  <select value={fileFilter} onChange={(event) => setFileFilter(event.target.value as FileFilter)}>
-                    <option value="all">All files</option>
-                    <option value="csv">CSV files</option>
-                    <option value="figures">Figures</option>
-                    <option value="missing">CSVs needing plots</option>
-                  </select>
-                </label>
-                <div className="mg-layout-mode" role="group" aria-label="Gallery layout">
-                  <button
-                    type="button"
-                    className={galleryLayout === "grid" ? "is-active" : ""}
-                    onClick={() => setGalleryLayout("grid")}
-                  >
-                    Grid
-                  </button>
-                  <button
-                    type="button"
-                    className={galleryLayout === "rows" ? "is-active" : ""}
-                    onClick={() => setGalleryLayout("rows")}
-                  >
-                    Rows
-                  </button>
-                  <button
-                    type="button"
-                    className={galleryLayout === "columns" ? "is-active" : ""}
-                    onClick={() => setGalleryLayout("columns")}
-                  >
-                    Columns
-                  </button>
-                </div>
-              </div>
-              <label>
-                Tile size
-                <input
-                  type="range"
-                  min="160"
-                  max="1400"
-                  step="20"
-                  value={tileSize}
-                  onChange={(event) => updateTileSize(Number(event.target.value))}
-                />
-              </label>
-            </div>
             <div
               className={`mg-card-grid is-${galleryLayout} ${draggingPlotSetId ? "is-dragging-card" : ""}`}
               style={{ ["--tile-size" as string]: `${tileSize}px` }}
@@ -956,17 +1100,37 @@ function App(props: StreamlitProps) {
                       (item.dataset?.id != null && item.dataset.id === selectedDatasetId)
                       || item.records.some((record) => record.id === selectedRecord?.id)
                     }
-                    expanded={expandedCardId === item.id}
+                    tileSize={tileSize}
+                    cardSize={cardSizes[item.id] ?? tileSize}
                     onActivateTab={(tab) => {
                       setActiveCardTabs((current) => ({ ...current, [item.id]: tab }));
-                    }}
-                    onToggleExpanded={() => {
-                      setExpandedCardId((current) => (current === item.id ? null : item.id));
                     }}
                     onGenerate={() => {
                       if (item.dataset) draftDataset(item.dataset.id);
                     }}
                     onMaximize={(plotId) => maximizePlot(plotId)}
+                    onSaveRedraw={(plotId, redraw) => {
+                      Streamlit.setComponentValue({
+                        event: {
+                          id: eventId("save_redraw_metadata"),
+                          type: "save_redraw_metadata",
+                          plot_id: plotId,
+                          redraw,
+                        },
+                      });
+                    }}
+                    onSaveYaml={(plotId, attachmentPath, yamlText) => {
+                      Streamlit.setComponentValue({
+                        event: {
+                          id: eventId("save_yaml_attachment"),
+                          type: "save_yaml_attachment",
+                          plot_id: plotId,
+                          attachment_path: attachmentPath,
+                          yaml_text: yamlText,
+                        },
+                      });
+                    }}
+                    onResize={(size) => resizeCard(item.id, size)}
                     checked={Boolean(item.plotSet && checkedPlotSetIds.has(item.plotSet.plotSetId))}
                     dragging={Boolean(item.plotSet && draggingPlotSetId === item.plotSet.plotSetId)}
                     dropTarget={Boolean(item.plotSet && dropTargetPlotSetId === item.plotSet.plotSetId)}
@@ -998,6 +1162,7 @@ function App(props: StreamlitProps) {
                       setDraggingPlotSetId(null);
                       setDropTargetPlotSetId(null);
                     }}
+                    onPointerDragOver={reorderDraggingPlotSet}
                   />
                 ))
               ) : (
@@ -1048,7 +1213,7 @@ function buildVisibleItems({
   recordsByDatasetId,
   checkedPlotSetIds,
   checkedPlotSetOrder,
-  fileFilter,
+  fileFilters,
 }: {
   plotSets: PlotSetEntity[];
   datasetsById: Map<string, DatasetRecord>;
@@ -1056,12 +1221,12 @@ function buildVisibleItems({
   recordsByDatasetId: Map<string, PlotRecord[]>;
   checkedPlotSetIds: Set<string>;
   checkedPlotSetOrder: string[];
-  fileFilter: FileFilter;
+  fileFilters: Set<FileFilter>;
 }): DataPlotItem[] {
   const items = new Map<string, DataPlotItem>();
 
   function includeItem(item: DataPlotItem) {
-    if (!itemMatchesFilter(item, fileFilter)) return;
+    if (!itemMatchesFilters(item, fileFilters)) return;
     items.set(item.id, item);
   }
 
@@ -1084,12 +1249,17 @@ function buildVisibleItems({
   });
 }
 
-function itemMatchesFilter(item: DataPlotItem, fileFilter: FileFilter): boolean {
-  if (fileFilter === "all") return true;
-  if (fileFilter === "csv") return Boolean(item.dataset);
-  if (fileFilter === "figures") return item.records.length > 0;
-  if (fileFilter === "missing") return Boolean(item.dataset && item.records.length === 0);
-  return true;
+function itemMatchesFilters(item: DataPlotItem, fileFilters: Set<FileFilter>): boolean {
+  if (!fileFilters.size) return true;
+  if (item.plotSet) return plotSetMatchesFilters(item.plotSet, fileFilters);
+  return [...fileFilters].some((fileFilter) => {
+    if (fileFilter === "csv") return Boolean(item.dataset);
+    if (fileFilter === "svg") return item.records.some((record) => record.kind.toLowerCase() === "svg");
+    if (fileFilter === "png") return item.records.some((record) => record.kind.toLowerCase() === "png");
+    if (fileFilter === "yaml") return false;
+    if (fileFilter === "missing") return Boolean(item.dataset && item.records.length === 0);
+    return false;
+  });
 }
 
 function datasetIdForPlotSet(plotSet: PlotSetEntity): string | null {
@@ -1124,27 +1294,36 @@ function plotSetMatchesFolder(plotSet: PlotSetEntity, folderPath: string): boole
   return plotSet.folderPath === folderPath || plotSet.folderPath.startsWith(`${folderPath}/`);
 }
 
-function plotSetMatchesFilter(plotSet: PlotSetEntity, fileFilter: FileFilter): boolean {
+function plotSetMatchesFilters(plotSet: PlotSetEntity, fileFilters: Set<FileFilter>): boolean {
+  if (!fileFilters.size) return true;
   const types = new Set(plotSet.attachments.map((attachment) => attachment.type));
-  if (fileFilter === "all") return true;
-  if (fileFilter === "csv") return types.has("csv");
-  if (fileFilter === "figures") return types.has("svg") || types.has("png");
-  if (fileFilter === "missing") return types.has("csv") && !types.has("svg") && !types.has("png");
-  return true;
+  return [...fileFilters].some((fileFilter) => {
+    if (fileFilter === "csv") return types.has("csv");
+    if (fileFilter === "svg") return types.has("svg");
+    if (fileFilter === "png") return types.has("png");
+    if (fileFilter === "yaml") return types.has("mpl_yaml");
+    if (fileFilter === "missing") return types.has("csv") && !types.has("svg") && !types.has("png");
+    return false;
+  });
 }
 
 function fileMatchesFilter(
   file: FileItem,
-  fileFilter: FileFilter,
+  fileFilters: Set<FileFilter>,
   recordsByDatasetId: Map<string, PlotRecord[]>,
 ): boolean {
-  if (fileFilter === "all") return true;
-  if (fileFilter === "csv") return file.kind === "csv";
-  if (fileFilter === "figures") return file.kind === "image";
-  if (fileFilter === "missing") {
-    return file.kind === "csv" && Boolean(file.datasetId && !(recordsByDatasetId.get(file.datasetId)?.length));
-  }
-  return true;
+  if (!fileFilters.size) return true;
+  const suffix = (file.suffix ?? file.path.split(".").pop() ?? "").toLowerCase().replace(/^\./, "");
+  return [...fileFilters].some((fileFilter) => {
+    if (fileFilter === "csv") return file.kind === "csv";
+    if (fileFilter === "svg") return file.kind === "image" && suffix === "svg";
+    if (fileFilter === "png") return file.kind === "image" && suffix === "png";
+    if (fileFilter === "yaml") return suffix === "yaml" || suffix === "yml";
+    if (fileFilter === "missing") {
+      return file.kind === "csv" && Boolean(file.datasetId && !(recordsByDatasetId.get(file.datasetId)?.length));
+    }
+    return false;
+  });
 }
 
 function shortRootPath(rootPath: string): string {
@@ -1174,25 +1353,13 @@ function cardTitle(item: DataPlotItem): string {
   return item.plotSet?.title ?? item.dataset?.displayName ?? item.records[0]?.name ?? "Untitled";
 }
 
-function plotSummary(item: DataPlotItem, activeRecord: PlotRecord | null): string {
-  const redraw = activeRecord?.redraw;
-  if (redraw?.title && redraw.title !== cardTitle(item)) return redraw.title;
-  if (redraw?.xlabel && redraw?.ylabel) return `${redraw.xlabel} vs ${redraw.ylabel}`;
-  if (item.plotSet?.folderPath && item.plotSet.folderPath !== ".") return item.plotSet.folderPath;
-  return item.dataset?.path ?? activeRecord?.imagePath ?? "Plot set";
-}
-
-function imageDimensionBadge(record: PlotRecord): string | null {
-  if (record.widthPx && record.heightPx) return `${record.widthPx} x ${record.heightPx}px`;
-  return record.imageFormat ?? null;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kib = bytes / 1024;
-  if (kib < 1024) return `${kib.toFixed(kib >= 10 ? 0 : 1)} KiB`;
-  const mib = kib / 1024;
-  return `${mib.toFixed(mib >= 10 ? 0 : 1)} MiB`;
+function shouldIgnoreCardDrag(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return true;
+  return Boolean(
+    target.closest(
+      ".mg-card-tabs, .mg-edit-button, .mg-card-resize, .mg-card-actions, input, select, textarea, label",
+    ),
+  );
 }
 
 function EmptyGallery({
@@ -1321,8 +1488,15 @@ function FoldersPane({
     <section className="mg-sidebar-pane mg-folders-pane" aria-label="Folders">
       <div className="mg-pane-title">
         <span>Folders</span>
-        <button type="button" className="mg-pane-toggle" aria-expanded={!collapsed} onClick={onToggleCollapsed}>
-          Hide folders
+        <button
+          type="button"
+          className="mg-pane-toggle is-icon-only"
+          aria-expanded={!collapsed}
+          aria-label="Hide folders"
+          title="Hide folders"
+          onClick={onToggleCollapsed}
+        >
+          <ChevronLeft aria-hidden="true" size={14} />
         </button>
       </div>
       <div role="tree" className="mg-folder-tree">
@@ -1335,11 +1509,14 @@ function FoldersPane({
 function FilesPane({
   plotSets,
   itemNoun,
+  activeFilters,
   checkedPlotSetIds,
   selectedPlotSetId,
   collapsed,
   showUngrouped,
   onToggleCollapsed,
+  onToggleFilter,
+  onClearFilters,
   onToggleShowUngrouped,
   onFocus,
   onToggleChecked,
@@ -1347,23 +1524,37 @@ function FilesPane({
 }: {
   plotSets: PlotSetEntity[];
   itemNoun: string;
+  activeFilters: Set<FileFilter>;
   checkedPlotSetIds: Set<string>;
   selectedPlotSetId: string | null;
   collapsed: boolean;
   showUngrouped: boolean;
   onToggleCollapsed: () => void;
+  onToggleFilter: (filter: FileFilter) => void;
+  onClearFilters: () => void;
   onToggleShowUngrouped: (show: boolean) => void;
   onFocus: (plotSetId: string, attachmentId?: string) => void;
   onToggleChecked: (plotSetId: string, checked: boolean) => void;
   onToggleAllChecked: (checked: boolean) => void;
 }) {
   const selectedRowRef = useRef<HTMLDivElement | null>(null);
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
+  const imageMode = itemNoun === "images";
+  const visibleFilters = imageMode
+    ? FILE_FILTERS.filter((filter) => filter.value === "svg" || filter.value === "png")
+    : FILE_FILTERS;
   const allChecked = plotSets.length > 0 && plotSets.every((plotSet) => checkedPlotSetIds.has(plotSet.plotSetId));
   const checkedCount = plotSets.filter((plotSet) => checkedPlotSetIds.has(plotSet.plotSetId)).length;
 
   useEffect(() => {
     selectedRowRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [selectedPlotSetId, plotSets]);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = checkedCount > 0 && !allChecked;
+    }
+  }, [allChecked, checkedCount]);
 
   if (collapsed) {
     return (
@@ -1382,21 +1573,51 @@ function FilesPane({
         <span>Files</span>
         <div className="mg-pane-title-actions">
           <span>{plotSets.length}</span>
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            className="mg-master-check"
+            disabled={!plotSets.length}
+            checked={allChecked}
+            aria-label={allChecked ? `Clear all ${itemNoun} in folder` : `Select all ${itemNoun} in folder`}
+            title={allChecked ? `Clear all ${itemNoun} in folder` : `Select all ${itemNoun} in folder`}
+            onChange={(event) => onToggleAllChecked(event.target.checked)}
+          />
           <button
             type="button"
-            className="mg-pane-toggle"
-            disabled={!plotSets.length}
-            aria-label={allChecked ? `Clear all ${itemNoun} in folder` : `Select all ${itemNoun} in folder`}
-            onClick={() => onToggleAllChecked(!allChecked)}
+            className="mg-pane-toggle is-icon-only"
+            aria-expanded={!collapsed}
+            aria-label="Hide files"
+            title="Hide files"
+            onClick={onToggleCollapsed}
           >
-            {allChecked ? "Clear all" : "Select all"}
-          </button>
-          <button type="button" className="mg-pane-toggle" aria-expanded={!collapsed} onClick={onToggleCollapsed}>
-            Hide files
+            <ChevronLeft aria-hidden="true" size={14} />
           </button>
         </div>
       </div>
       {checkedCount ? <div className="mg-file-selection-summary">{checkedCount} selected in folder</div> : null}
+      <div className="mg-file-filter-chips" role="toolbar" aria-label="File type filters">
+        <button
+          type="button"
+          className={activeFilters.size === 0 ? "is-active" : ""}
+          aria-pressed={activeFilters.size === 0}
+          onClick={onClearFilters}
+        >
+          All
+        </button>
+        {visibleFilters.map((filter) => (
+          <button
+            type="button"
+            key={filter.value}
+            title={filter.title}
+            className={activeFilters.has(filter.value) ? "is-active" : ""}
+            aria-pressed={activeFilters.has(filter.value)}
+            onClick={() => onToggleFilter(filter.value)}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
       <div className="mg-files-list" role="listbox" aria-label={itemNoun === "images" ? "Images" : "Plot sets"}>
         {plotSets.length ? (
           plotSets.map((plotSet, index) => {
@@ -1415,19 +1636,25 @@ function FilesPane({
                   className="mg-file-main"
                   title={plotSet.title}
                   onClick={() => {
+                    if (checked) {
+                      onToggleChecked(plotSet.plotSetId, false);
+                      return;
+                    }
                     onFocus(plotSet.plotSetId, figure?.id);
-                    if (!checked) onToggleChecked(plotSet.plotSetId, true);
+                    onToggleChecked(plotSet.plotSetId, true);
                   }}
                 >
                   <AttachmentIcon type={figure?.type ?? "csv"} />
                   <span className="mg-file-title">{plotSet.title}</span>
-                  <span className="mg-attachment-strip" aria-label={`Attachments for ${plotSet.title}`}>
-                    {attachmentTypeSummary(plotSet).map((type) => (
-                      <span key={`${plotSet.plotSetId}-${type}`} className={`mg-attachment-chip is-${type}`}>
-                        {attachmentLabel(type)}
-                      </span>
-                    ))}
-                  </span>
+                  {imageMode ? null : (
+                    <span className="mg-attachment-strip" aria-label={`Attachments for ${plotSet.title}`}>
+                      {attachmentTypeSummary(plotSet).map((type) => (
+                        <span key={`${plotSet.plotSetId}-${type}`} className={`mg-attachment-chip is-${type}`}>
+                          {attachmentLabel(type)}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </button>
                 <input
                   type="checkbox"
@@ -1459,11 +1686,14 @@ function DataPlotCard({
   item,
   activeTab,
   selected,
-  expanded,
+  tileSize,
+  cardSize,
   onActivateTab,
-  onToggleExpanded,
   onGenerate,
   onMaximize,
+  onSaveRedraw,
+  onSaveYaml,
+  onResize,
   checked,
   dragging,
   dropTarget,
@@ -1471,15 +1701,19 @@ function DataPlotCard({
   onDragOver,
   onDrop,
   onDragEnd,
+  onPointerDragOver,
 }: {
   item: DataPlotItem;
   activeTab: string;
   selected: boolean;
-  expanded: boolean;
+  tileSize: number;
+  cardSize: number;
   onActivateTab: (tab: string) => void;
-  onToggleExpanded: () => void;
   onGenerate: () => void;
   onMaximize: (plotId: string) => void;
+  onSaveRedraw: (plotId: string, redraw: RedrawMetadata) => void;
+  onSaveYaml: (plotId: string, attachmentPath: string, yamlText: string) => void;
+  onResize: (size: number) => void;
   checked: boolean;
   dragging: boolean;
   dropTarget: boolean;
@@ -1487,6 +1721,7 @@ function DataPlotCard({
   onDragOver: () => void;
   onDrop: () => void;
   onDragEnd: () => void;
+  onPointerDragOver: (draggedPlotSetId: string, targetPlotSetId: string) => void;
 }) {
   const activeRecord = item.records.find((record) => record.id === activeTab) ?? item.records[0] ?? null;
   const csvPreview = csvPreviewData(item, activeRecord);
@@ -1494,14 +1729,85 @@ function DataPlotCard({
   const yamlAttachments = item.plotSet?.attachments.filter((attachment) => attachment.type === "mpl_yaml") ?? [];
   const activeYaml = yamlAttachments.find((attachment) => attachment.id === activeTab) ?? null;
   const figureCount = item.records.length;
-  const tabLabel = activeYaml ? "YAML" : activeRecord ? activeRecord.kind : "CSV";
-  const summary = plotSummary(item, activeRecord);
+  const canGenerate = Boolean(item.dataset && figureCount === 0);
+  const cardStyle = {
+    ["--card-size" as string]: `${cardSize}px`,
+  } satisfies CSSProperties;
+
+  function startResize(event: ReactPointerEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startSize = cardSize;
+    const pointerId = event.pointerId;
+    event.currentTarget.setPointerCapture?.(pointerId);
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const delta = Math.max(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      onResize(startSize + delta);
+    };
+    const onPointerUp = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+  }
+
+  function startCardPointerDrag(event: ReactPointerEvent<HTMLElement>) {
+    const plotSetId = item.plotSet?.plotSetId;
+    if (!checked || !plotSetId || event.button !== 0 || shouldIgnoreCardDrag(event.target)) return;
+
+    event.preventDefault();
+    const card = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    card.setPointerCapture?.(pointerId);
+    card.style.transition = "none";
+    card.style.zIndex = "20";
+    card.style.opacity = "0.92";
+    card.style.pointerEvents = "none";
+    onDragStart();
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+      const targetCard = document
+        .elementFromPoint(moveEvent.clientX, moveEvent.clientY)
+        ?.closest<HTMLElement>("article.mg-data-plot-card[data-plot-set-id]");
+      const targetPlotSetId = targetCard?.dataset.plotSetId;
+      if (targetPlotSetId && targetPlotSetId !== plotSetId) {
+        onPointerDragOver(plotSetId, targetPlotSetId);
+      }
+    };
+
+    const onPointerUp = () => {
+      card.style.transition = "";
+      card.style.transform = "";
+      card.style.zIndex = "";
+      card.style.opacity = "";
+      card.style.pointerEvents = "";
+      card.releasePointerCapture?.(pointerId);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      onDragEnd();
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+  }
+
   return (
     <article
       className={`mg-card mg-data-plot-card ${selected ? "is-selected" : ""} ${checked ? "is-draggable" : ""} ${dragging ? "is-dragging" : ""} ${dropTarget ? "is-drop-target" : ""}`}
+      style={cardStyle}
+      data-plot-set-id={item.plotSet?.plotSetId}
       draggable={checked}
       aria-label={`${cardTitle(item)} card`}
       aria-grabbed={checked ? dragging : undefined}
+      onPointerDown={startCardPointerDrag}
       onDragStart={(event: ReactDragEvent<HTMLElement>) => {
         if (!checked) return;
         event.dataTransfer.effectAllowed = "move";
@@ -1523,66 +1829,50 @@ function DataPlotCard({
       onDragEnd={onDragEnd}
     >
       <div className="mg-card-header">
-        <div className="mg-card-heading">
-          <div className="mg-card-title" title={cardTitle(item)}>
-            {cardTitle(item)}
-          </div>
-          <div className="mg-card-subtitle" title={item.plotSet?.folderPath ?? item.dataset?.path ?? activeRecord?.imagePath ?? ""}>
-            {summary}
-          </div>
-        </div>
         <div className="mg-card-header-actions">
-          {checked ? (
-            <span className="mg-drag-hint" aria-label={`Drag ${cardTitle(item)} to reorder`}>
-              Drag
-            </span>
-          ) : null}
-          <button type="button" className="mg-info-button" aria-expanded={expanded} onClick={onToggleExpanded}>
-            {expanded ? "Hide details" : "Details"}
-          </button>
+          <div className="mg-card-tabs" role="tablist" aria-label={`Views for ${cardTitle(item)}`}>
+            {hasCsvTab ? (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "csv"}
+                className={activeTab === "csv" ? "is-active" : ""}
+                onClick={() => onActivateTab("csv")}
+              >
+                CSV
+              </button>
+            ) : null}
+            {item.records.map((record) => (
+              <button
+                type="button"
+                role="tab"
+                key={record.id}
+                aria-selected={activeTab === record.id}
+                className={activeTab === record.id ? "is-active" : ""}
+                onClick={() => onActivateTab(record.id)}
+              >
+                {record.kind}
+              </button>
+            ))}
+            {yamlAttachments.map((attachment) => (
+              <button
+                type="button"
+                role="tab"
+                key={attachment.id}
+                aria-selected={activeTab === attachment.id}
+                className={activeTab === attachment.id ? "is-active" : ""}
+                onClick={() => onActivateTab(attachment.id)}
+              >
+                YAML
+              </button>
+            ))}
+          </div>
           {activeRecord ? (
             <button type="button" className="mg-edit-button" onClick={() => onMaximize(activeRecord.id)}>
-              Maximize / edit
+              Edit
             </button>
           ) : null}
         </div>
-      </div>
-      <div className="mg-card-tabs" role="tablist" aria-label={`Views for ${cardTitle(item)}`}>
-        {hasCsvTab ? (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "csv"}
-            className={activeTab === "csv" ? "is-active" : ""}
-            onClick={() => onActivateTab("csv")}
-          >
-            CSV
-          </button>
-        ) : null}
-        {item.records.map((record) => (
-          <button
-            type="button"
-            role="tab"
-            key={record.id}
-            aria-selected={activeTab === record.id}
-            className={activeTab === record.id ? "is-active" : ""}
-            onClick={() => onActivateTab(record.id)}
-          >
-            {record.kind}
-          </button>
-        ))}
-        {yamlAttachments.map((attachment) => (
-          <button
-            type="button"
-            role="tab"
-            key={attachment.id}
-            aria-selected={activeTab === attachment.id}
-            className={activeTab === attachment.id ? "is-active" : ""}
-            onClick={() => onActivateTab(attachment.id)}
-          >
-            YAML
-          </button>
-        ))}
       </div>
       <div className="mg-card-viewport">
         {activeYaml ? (
@@ -1591,9 +1881,11 @@ function DataPlotCard({
             record={item.records.find((record) => record.id === activeYaml.plotId) ?? activeRecord}
             editable={Boolean(item.plotSet?.editable)}
             onOpenEditor={(plotId) => onMaximize(plotId)}
+            onSaveRedraw={onSaveRedraw}
+            onSaveYaml={onSaveYaml}
           />
         ) : activeTab === "csv" && csvPreview ? (
-          <CsvPreviewTable preview={csvPreview} expanded={expanded} />
+          <CsvPreviewTable preview={csvPreview} />
         ) : activeRecord && activeRecord.imageSrc ? (
           <button type="button" className="mg-card-image" onClick={() => onMaximize(activeRecord.id)}>
             <img src={activeRecord.imageSrc} alt={activeRecord.name} />
@@ -1604,35 +1896,25 @@ function DataPlotCard({
             <span>Preview loads after selecting this plot set.</span>
           </div>
         ) : csvPreview ? (
-          <CsvPreviewTable preview={csvPreview} expanded={expanded} />
+          <CsvPreviewTable preview={csvPreview} />
         ) : (
           <div className="mg-empty">No linked CSV or plot found.</div>
         )}
       </div>
-      <div className="mg-card-body">
-        {expanded ? (
-          <div className="mg-card-meta">
-            <div className="mg-badges">
-              {item.dataset ? <span>{item.dataset.columns.length} columns</span> : null}
-              {!item.dataset && csvPreview ? <span>{csvPreview.previewColumns.length} columns</span> : null}
-              {item.dataset ? <span>{item.dataset.numericColumns.length} numeric</span> : null}
-              {csvPreview && csvPreview.previewTruncated ? <span>preview truncated</span> : null}
-              {activeRecord ? imageDimensionBadge(activeRecord) : null}
-              {activeRecord?.sizeBytes ? <span>{formatBytes(activeRecord.sizeBytes)}</span> : null}
-              {figureCount ? <span>{figureCount} figure{figureCount === 1 ? "" : "s"}</span> : null}
-              {item.plotSet?.editable ? <span className="good">editable</span> : <span>view only</span>}
-              <span>{tabLabel}</span>
-            </div>
-          </div>
-        ) : null}
-        {item.dataset && figureCount === 0 ? (
+      {canGenerate ? (
+        <div className="mg-card-body">
           <div className="mg-card-actions">
             <button type="button" className="mg-primary" onClick={onGenerate}>
               Generate plot
             </button>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
+      <div
+        className="mg-card-resize"
+        aria-hidden="true"
+        onPointerDown={startResize}
+      />
     </article>
   );
 }
@@ -1660,9 +1942,9 @@ function csvPreviewData(item: DataPlotItem, activeRecord: PlotRecord | null): Cs
   };
 }
 
-function CsvPreviewTable({ preview, expanded }: { preview: CsvPreviewData; expanded: boolean }) {
-  const columns = (expanded ? preview.previewColumns : preview.previewColumns.slice(0, 4));
-  const rows = (expanded ? preview.previewRows.slice(0, 12) : preview.previewRows.slice(0, 4));
+function CsvPreviewTable({ preview }: { preview: CsvPreviewData }) {
+  const columns = preview.previewColumns.slice(0, 8);
+  const rows = preview.previewRows.slice(0, 12);
   if (preview.previewError) {
     return (
       <div className="mg-csv-mini">
@@ -1674,7 +1956,7 @@ function CsvPreviewTable({ preview, expanded }: { preview: CsvPreviewData; expan
     return <div className="mg-empty">No table preview available.</div>;
   }
   return (
-    <div className={`mg-csv-mini ${expanded ? "is-expanded" : ""}`} aria-label={`CSV table preview for ${preview.label}`}>
+    <div className="mg-csv-mini" aria-label={`CSV table preview for ${preview.label}`}>
       <table className="mg-csv-table">
         <thead>
           <tr>
@@ -1702,14 +1984,45 @@ function MetadataAttachmentView({
   record,
   editable,
   onOpenEditor,
+  onSaveRedraw,
+  onSaveYaml,
 }: {
   attachment: PlotSetAttachment;
   record: PlotRecord | null;
   editable: boolean;
   onOpenEditor: (plotId: string) => void;
+  onSaveRedraw: (plotId: string, redraw: RedrawMetadata) => void;
+  onSaveYaml: (plotId: string, attachmentPath: string, yamlText: string) => void;
 }) {
   const redraw = record?.redraw;
   const series = redraw?.series ?? [];
+  const [draft, setDraft] = useState<RedrawMetadata>(() => redraw ?? {});
+  const initialYamlText = attachment.textPreview?.trimEnd() ?? "";
+  const [yamlText, setYamlText] = useState(initialYamlText);
+  const canSaveYaml = Boolean(record && editable && !attachment.textPreviewTruncated);
+
+  useEffect(() => {
+    setDraft(redraw ?? {});
+  }, [redraw, record?.id]);
+
+  useEffect(() => {
+    setYamlText(attachment.textPreview?.trimEnd() ?? "");
+  }, [attachment.id, attachment.textPreview]);
+
+  function patchDraft(patch: Partial<RedrawMetadata>) {
+    setDraft((current) => ({ ...current, ...patch }));
+  }
+
+  function saveMetadata() {
+    if (!record) return;
+    onSaveRedraw(record.id, normalizeRedraw(draft, draft.series ?? series));
+  }
+
+  function saveYamlText() {
+    if (!record || !canSaveYaml) return;
+    onSaveYaml(record.id, attachment.sourcePath, yamlText.endsWith("\n") ? yamlText : `${yamlText}\n`);
+  }
+
   const fields = [
     ["Title", redraw?.title],
     ["Type", redraw?.kind],
@@ -1722,7 +2035,7 @@ function MetadataAttachmentView({
     ["Grid", redraw?.grid == null ? null : redraw.grid ? "on" : "off"],
     ["Legend", redraw?.legend_location],
   ].filter((field): field is [string, string] => Boolean(field[1]));
-  const yamlText = attachment.textPreview?.trim();
+  const rawYamlChanged = yamlText !== initialYamlText;
   return (
     <div className="mg-metadata-view">
       <div className="mg-metadata-head">
@@ -1731,11 +2044,65 @@ function MetadataAttachmentView({
           <strong>{attachment.displayName}</strong>
           <span>{editable ? "Editable style sidecar" : "View-only sidecar"}</span>
         </div>
-        {record ? (
-          <button type="button" className="mg-edit-button" onClick={() => onOpenEditor(record.id)}>
-            Open editor
-          </button>
-        ) : null}
+        <div className="mg-yaml-actions">
+          {record ? (
+            <button type="button" className="mg-edit-button" onClick={() => onOpenEditor(record.id)}>
+              Full editor
+            </button>
+          ) : null}
+          {record && editable ? (
+            <button type="button" className="mg-primary is-compact" onClick={saveMetadata}>
+              Save fields
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="mg-yaml-field-grid" aria-label={`Editable YAML metadata for ${attachment.displayName}`}>
+        <label>
+          Title
+          <input
+            value={draft.title ?? ""}
+            disabled={!editable}
+            onChange={(event) => patchDraft({ title: event.target.value })}
+          />
+        </label>
+        <label>
+          Kind
+          <input
+            value={draft.kind ?? ""}
+            disabled={!editable}
+            onChange={(event) => patchDraft({ kind: event.target.value })}
+          />
+        </label>
+        <label>
+          X
+          <input value={draft.x ?? ""} disabled={!editable} onChange={(event) => patchDraft({ x: event.target.value })} />
+        </label>
+        <label>
+          X label
+          <input
+            value={draft.xlabel ?? ""}
+            disabled={!editable}
+            onChange={(event) => patchDraft({ xlabel: event.target.value })}
+          />
+        </label>
+        <label>
+          Y label
+          <input
+            value={draft.ylabel ?? ""}
+            disabled={!editable}
+            onChange={(event) => patchDraft({ ylabel: event.target.value })}
+          />
+        </label>
+        <label className="mg-mini-toggle">
+          <input
+            type="checkbox"
+            checked={draft.grid ?? true}
+            disabled={!editable}
+            onChange={(event) => patchDraft({ grid: event.target.checked })}
+          />
+          Grid
+        </label>
       </div>
       <div className="mg-metadata-summary">
         {fields.length ? fields.map(([label, value]) => <span key={label}><strong>{label}</strong>{value}</span>) : <span>No plot metadata summary available.</span>}
@@ -1752,10 +2119,23 @@ function MetadataAttachmentView({
           ))}
         </div>
       ) : null}
-      <pre className="mg-yaml-preview">
-        {yamlText || "YAML preview is not available for this sidecar."}
-        {attachment.textPreviewTruncated ? "\n..." : ""}
-      </pre>
+      <label className="mg-yaml-editor">
+        YAML
+        <textarea
+          value={yamlText}
+          disabled={!canSaveYaml}
+          spellCheck={false}
+          onChange={(event) => setYamlText(event.target.value)}
+          aria-label={`YAML text for ${attachment.displayName}`}
+          placeholder="YAML preview is not available for this sidecar."
+        />
+      </label>
+      <div className="mg-yaml-editor-actions">
+        {attachment.textPreviewTruncated ? <span>Preview is truncated; raw save is disabled.</span> : <span>{attachment.sourcePath}</span>}
+        <button type="button" className="mg-edit-button" disabled={!canSaveYaml || !rawYamlChanged} onClick={saveYamlText}>
+          Save YAML
+        </button>
+      </div>
     </div>
   );
 }
@@ -2322,7 +2702,7 @@ function PlotLookModal({
       <section className="mg-modal-card">
         <div className="mg-modal-head">
           <div>
-            <div className="mg-eyebrow">Maximized plot</div>
+            <div className="mg-eyebrow">Edit plot</div>
             <h2>{record.name}</h2>
           </div>
           <button type="button" className="mg-inspector-toggle" onClick={onClose}>

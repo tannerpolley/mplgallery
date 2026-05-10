@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from pathlib import Path
 
 import streamlit as st
 
+from mplgallery.core.models import DiscoveredFile, FileKind, PlotRecord
 from mplgallery.core.user_settings import (
     UserSettings,
     forget_recent_root,
@@ -347,3 +349,62 @@ def test_component_clear_recent_roots_event_removes_project_memory(
     assert changed is True
     assert load_user_settings().recent_roots == ()
     assert load_user_settings().last_active_root is None
+
+
+def test_component_set_browse_mode_event_updates_session_state(tmp_path: Path) -> None:
+    st.session_state.clear()
+
+    changed = process_component_event(
+        event=ComponentEvent(
+            id="browse-mode-1",
+            type="set_browse_mode",
+            browse_mode="image-library",
+        ),
+        project_root=tmp_path,
+        launch_root=tmp_path,
+    )
+
+    assert changed is True
+    assert st.session_state["mplgallery_browse_mode"] == "image-library"
+
+
+def test_component_save_yaml_attachment_writes_attached_sidecar(monkeypatch, tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    sidecar = project / "results" / "alpha.mpl.yaml"
+    image = project / "results" / "alpha.svg"
+    sidecar.parent.mkdir(parents=True)
+    sidecar.write_text("kind: line\n", encoding="utf-8")
+    image.write_text("<svg />", encoding="utf-8")
+    monkeypatch.setattr(st, "toast", lambda message: None)
+    st.session_state.clear()
+    st.session_state["mplgallery_records"] = [
+        PlotRecord(
+            plot_id="plots__alpha",
+            image=DiscoveredFile(
+                path=image,
+                relative_path=Path("results/alpha.svg"),
+                kind=FileKind.IMAGE,
+                suffix=".svg",
+                stem="alpha",
+                parent_dir=image.parent,
+                size_bytes=image.stat().st_size,
+                modified_at=datetime.now(),
+            ),
+            metadata_files=[Path("results/alpha.mpl.yaml")],
+        )
+    ]
+
+    changed = process_component_event(
+        event=ComponentEvent(
+            id="save-yaml-1",
+            type="save_yaml_attachment",
+            plot_id="plots__alpha",
+            attachment_path="results/alpha.mpl.yaml",
+            yaml_text="kind: scatter\nx: time\n",
+        ),
+        project_root=project,
+        launch_root=project,
+    )
+
+    assert changed is True
+    assert sidecar.read_text(encoding="utf-8") == "kind: scatter\nx: time\n"

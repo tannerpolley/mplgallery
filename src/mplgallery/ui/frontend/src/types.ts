@@ -210,6 +210,7 @@ export type BrowserPayload = {
 
 export type ComponentEvent =
   | { id: string; type: "save_redraw_metadata"; plot_id: string; redraw: RedrawMetadata }
+  | { id: string; type: "save_yaml_attachment"; plot_id: string; attachment_path: string; yaml_text: string }
   | { id: string; type: "request_rerender"; plot_id: string }
   | { id: string; type: "select_dataset"; dataset_id: string }
   | { id: string; type: "draft_dataset"; dataset_id: string }
@@ -228,6 +229,7 @@ export type ComponentEvent =
   | { id: string; type: "forget_recent_root"; root_path: string }
   | { id: string; type: "set_user_setting"; setting_key: string; setting_value: boolean }
   | { id: string; type: "clear_recent_roots" }
+  | { id: string; type: "set_browse_mode"; browse_mode: "plot-set-manager" | "image-library" }
   | { id: string; type: "install_update"; download_url: string };
 
 export type RootContext = {

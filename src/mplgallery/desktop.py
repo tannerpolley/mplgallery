@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 from mplgallery import __version__
-from mplgallery.updater import check_for_updates
+from mplgallery.updater import UpdateCheckResult, check_for_updates
 
 
 APP_NAME = "MPLGallery"
@@ -50,15 +50,23 @@ def launch_desktop_app(
     )
     url = f"http://127.0.0.1:{server_port}"
     try:
-        _wait_for_server(url, server_process)
         window = webview.create_window(
             title=title,
-            url=url,
+            html=_loading_html(),
             width=width,
             height=height,
             min_size=(1100, 720),
         )
-        webview.start()
+
+        def load_when_ready() -> None:
+            try:
+                _wait_for_server(url, server_process)
+                window.load_url(url)
+            except Exception as exc:  # pragma: no cover - native window display path
+                _trace("launch_desktop_app:load_error", {"error": str(exc)})
+                window.load_html(_error_html(str(exc)))
+
+        webview.start(load_when_ready)
         return 0 if window is not None else 1
     finally:
         _stop_process(server_process)
@@ -403,13 +411,85 @@ def _trace(event: str, payload: dict[str, object] | None = None) -> None:
 
 
 def _desktop_update_payload() -> dict[str, object]:
+    can_install_updates = os.name == "nt" and bool(getattr(sys, "frozen", False))
     return {
         "name": APP_NAME,
         "version": APP_VERSION,
         "appId": APP_USER_MODEL_ID,
-        "canInstallUpdates": os.name == "nt" and bool(getattr(sys, "frozen", False)),
-        "update": check_for_updates().to_payload(),
+        "canInstallUpdates": can_install_updates,
+        "update": (
+            check_for_updates(timeout_seconds=0.75).to_payload()
+            if can_install_updates
+            else UpdateCheckResult(checked=False).to_payload()
+        ),
     }
+
+
+def _loading_html() -> str:
+    return """<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #f4f6f8;
+        color: #17202f;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      body {
+        display: grid;
+        place-items: center;
+      }
+      main {
+        display: grid;
+        justify-items: center;
+        gap: 12px;
+      }
+      .mark {
+        display: grid;
+        place-items: center;
+        width: 52px;
+        height: 52px;
+        border: 1px solid #cbd6e2;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 18px 46px rgba(23, 32, 47, 0.12);
+        color: #256f8f;
+        font-size: 26px;
+        font-weight: 800;
+      }
+      h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      p {
+        margin: 0;
+        color: #5a6675;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark">M</div>
+      <h1>Opening MPLGallery</h1>
+      <p>Starting the local plotting workspace...</p>
+    </main>
+  </body>
+</html>"""
+
+
+def _error_html(message: str) -> str:
+    safe_message = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return f"""<!doctype html>
+<html>
+  <body style="font-family: Segoe UI, system-ui, sans-serif; padding: 28px; color: #17202f;">
+    <h1>MPLGallery could not start</h1>
+    <pre style="white-space: pre-wrap;">{safe_message}</pre>
+  </body>
+</html>"""
 
 
 if __name__ == "__main__":
