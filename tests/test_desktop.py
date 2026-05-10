@@ -13,12 +13,14 @@ def test_streamlit_command_uses_python_module_in_dev_mode(tmp_path: Path) -> Non
         port=8615,
         choose_root=True,
         include_artifacts=True,
+        image_library=True,
     )
 
     assert command[:3] == [desktop.sys.executable, "-m", "streamlit"]
     assert "--server.port=8615" in command
     assert "--choose-root" in command
     assert "--include-artifacts" in command
+    assert "--image-library" in command
 
 
 def test_streamlit_command_uses_internal_mode_when_frozen(monkeypatch, tmp_path: Path) -> None:
@@ -30,6 +32,7 @@ def test_streamlit_command_uses_internal_mode_when_frozen(monkeypatch, tmp_path:
         port=8616,
         choose_root=False,
         include_artifacts=False,
+        image_library=False,
     )
 
     assert command[0] == "C:/dist/mplgallery-desktop.exe"

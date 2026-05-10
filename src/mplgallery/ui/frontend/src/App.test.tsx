@@ -415,6 +415,72 @@ describe("App explorer", () => {
     expect(within(card as HTMLElement).getByText("signal")).toBeInTheDocument();
   });
 
+  it("labels loose image-only projects as an image library and shows image metadata", () => {
+    const base = payload();
+    render(
+      <App
+        payload={payload({
+          browseMode: "image-library",
+          datasets: [],
+          records: [
+            {
+              ...base.records[0],
+              id: "exports__overview",
+              name: "overview.png",
+              kind: "PNG",
+              imagePath: "exports/overview.png",
+              csvPath: null,
+              sourceDatasetId: null,
+              editable: false,
+              widthPx: 1200,
+              heightPx: 800,
+              sizeBytes: 153600,
+              imageFormat: "PNG",
+            },
+          ],
+          files: [],
+          plotSets: [
+            {
+              plotSetId: "plotset::exports::overview",
+              title: "overview",
+              folderPath: "exports",
+              attachments: [
+                {
+                  id: "exports__overview",
+                  type: "png",
+                  displayName: "overview.png",
+                  sourcePath: "exports/overview.png",
+                  datasetId: null,
+                  plotId: "exports__overview",
+                },
+              ],
+              preferredFigure: {
+                id: "exports__overview",
+                type: "png",
+                displayName: "overview.png",
+                sourcePath: "exports/overview.png",
+                datasetId: null,
+                plotId: "exports__overview",
+              },
+              editable: false,
+              checked: false,
+              renderStatus: "ready",
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Images")).toBeInTheDocument();
+    expect(screen.getByText("Select images from Files to build a gallery.")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Show overview"));
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByRole("img", { name: "overview.png" })).toBeInTheDocument();
+    expect(screen.getByText("1200 x 800px")).toBeInTheDocument();
+    expect(screen.getByText("150 KiB")).toBeInTheDocument();
+    expect(screen.getByText("view only")).toBeInTheDocument();
+  });
+
   it("uses the right-side checkbox to keep a plot set in the gallery", () => {
     render(<App payload={payload()} />);
 
@@ -477,7 +543,7 @@ describe("App explorer", () => {
     expect(rows[1]).toHaveClass("is-shade-1");
   });
 
-  it("shows only top-level roots with PNG plot sets and preserves nested folders below them", () => {
+  it("shows only top-level roots with PNG/SVG plot sets and preserves nested folders below them", () => {
     const base = payload();
     render(
       <App
@@ -509,10 +575,10 @@ describe("App explorer", () => {
 
     fireEvent.click(within(foldersPane()).getByRole("button", { name: "Expand mplgallery" }));
     expect(within(foldersPane()).getByText("analyses")).toBeInTheDocument();
+    expect(within(foldersPane()).getByText("docs")).toBeInTheDocument();
     fireEvent.click(within(foldersPane()).getByRole("button", { name: "Expand analyses" }));
     expect(within(foldersPane()).getByText("case_a")).toBeInTheDocument();
     expect(within(foldersPane()).getByText("case_b")).toBeInTheDocument();
-    expect(within(foldersPane()).queryByText("docs")).not.toBeInTheDocument();
   });
 
   it("collapses folder and file panes to narrow rails", () => {

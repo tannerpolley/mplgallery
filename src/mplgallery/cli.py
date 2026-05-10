@@ -30,9 +30,18 @@ def scan(
         "--include-artifacts/--csv-only",
         help="Include PNG/SVG artifact-browser records alongside draftable CSV files.",
     ),
+    image_library: bool = typer.Option(
+        False,
+        "--image-library",
+        help="Browse only PNG/SVG image files and do not require plot-set or CSV layout.",
+    ),
 ) -> None:
     """Scan a project for CSV roots and MPLGallery draft plot state."""
-    index = build_csv_studio_index(project_root, include_artifacts=include_artifacts)
+    index = build_csv_studio_index(
+        project_root,
+        include_artifacts=include_artifacts,
+        image_library_mode=image_library,
+    )
     diagnostics = diagnose_manifest_references(index.project_root)
 
     matched = sum(1 for record in index.records if record.csv is not None)
@@ -40,7 +49,7 @@ def scan(
         typer.echo(
             json.dumps(
                 {
-                    "mode": "plot-set-manager",
+                    "mode": index.browse_mode,
                     "project_root": str(index.project_root),
                     "plot_sets": [
                         {
@@ -130,7 +139,7 @@ def scan(
         return
 
     typer.echo(f"Project: {index.project_root}")
-    typer.echo("Mode: Plot-Set Manager")
+    typer.echo(f"Mode: {'Image Library' if index.browse_mode == 'image-library' else 'Plot-Set Manager'}")
     typer.echo(f"Plot sets: {len(index.plot_sets)}")
     typer.echo(f"CSV roots: {len(index.csv_roots)}")
     typer.echo(f"Datasets: {len(index.datasets)}")
@@ -282,6 +291,11 @@ def serve(
         "--include-artifacts/--csv-only",
         help="Show PNG/SVG artifacts alongside draftable CSV files.",
     ),
+    image_library: bool = typer.Option(
+        False,
+        "--image-library",
+        help="Browse only PNG/SVG image files and do not require plot-set or CSV layout.",
+    ),
 ) -> None:
     """Launch the local Streamlit CSV plot studio."""
     raise typer.Exit(
@@ -289,6 +303,7 @@ def serve(
             project_root,
             port=port,
             include_artifacts=include_artifacts,
+            image_library=image_library,
             choose_root=choose_root,
         )
     )
@@ -308,6 +323,11 @@ def run_app(
         "--include-artifacts/--csv-only",
         help="Show PNG/SVG artifacts alongside draftable CSV files.",
     ),
+    image_library: bool = typer.Option(
+        False,
+        "--image-library",
+        help="Browse only PNG/SVG image files and do not require plot-set or CSV layout.",
+    ),
 ) -> None:
     """Launch the local Streamlit CSV plot studio."""
     raise typer.Exit(
@@ -315,6 +335,7 @@ def run_app(
             project_root,
             port=port,
             include_artifacts=include_artifacts,
+            image_library=image_library,
             choose_root=choose_root,
         )
     )
@@ -334,6 +355,11 @@ def desktop(
         "--include-artifacts/--csv-only",
         help="Show PNG/SVG artifacts alongside draftable CSV files.",
     ),
+    image_library: bool = typer.Option(
+        False,
+        "--image-library",
+        help="Browse only PNG/SVG image files and do not require plot-set or CSV layout.",
+    ),
     browser: bool = typer.Option(
         False,
         "--browser",
@@ -350,6 +376,7 @@ def desktop(
                 resolved_root,
                 port=port,
                 include_artifacts=include_artifacts,
+                image_library=image_library,
                 choose_root=choose_root,
                 open_browser=True,
             )
@@ -360,6 +387,7 @@ def desktop(
             port=port,
             choose_root=choose_root,
             include_artifacts=include_artifacts,
+            image_library=image_library,
             width=width,
             height=height,
         )
@@ -374,6 +402,7 @@ def _run_streamlit_app(
     *,
     port: int | None,
     include_artifacts: bool,
+    image_library: bool,
     choose_root: bool,
     open_browser: bool = False,
 ) -> int:
@@ -396,6 +425,8 @@ def _run_streamlit_app(
         command.append("--choose-root")
     if include_artifacts:
         command.append("--include-artifacts")
+    if image_library:
+        command.append("--image-library")
     if open_browser:
         webbrowser.open(f"http://127.0.0.1:{chosen_port}")
     return subprocess.run(command, check=False).returncode

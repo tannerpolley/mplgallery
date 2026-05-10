@@ -132,10 +132,26 @@ def build_csv_studio_index(
     *,
     ensure_drafts: bool = False,
     include_artifacts: bool = True,
+    image_library_mode: bool = False,
     sample_rows: int = DEFAULT_SAMPLE_ROWS,
 ) -> CSVStudioIndex:
     """Build the CSV-first index used by the CLI and Streamlit host."""
     root = Path(project_root).expanduser().resolve()
+    if image_library_mode:
+        scan = scan_project(root)
+        records = [
+            record
+            for record in build_plot_records(scan, manifest=load_manifests(root))
+            if _is_reference_artifact_path(record.image.relative_path)
+        ]
+        return CSVStudioIndex(
+            project_root=root,
+            browse_mode="image-library",
+            records=records,
+            ignored_dir_count=scan.ignored_dir_count,
+            imported_artifacts=records,
+        )
+
     csv_roots = find_csv_roots(root)
     plot_sets = discover_plot_sets(root)
     datasets: list[DatasetRecord] = []
@@ -174,8 +190,10 @@ def build_csv_studio_index(
                 existing_paths.add(record.image.path)
         ignored_count += scan.ignored_dir_count
 
+    auto_image_library = bool(records) and not csv_roots and not plot_sets
     return CSVStudioIndex(
         project_root=root,
+        browse_mode="image-library" if auto_image_library else "plot-set-manager",
         csv_roots=csv_roots,
         datasets=datasets,
         records=records,

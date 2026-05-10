@@ -76,6 +76,11 @@ export type PlotRecord = {
   redraw: RedrawMetadata;
   series: SeriesStyle[];
   axisDefaults?: AxisDefaults;
+  widthPx?: number | null;
+  heightPx?: number | null;
+  sizeBytes?: number | null;
+  imageFormat?: string | null;
+  modifiedAt?: string | null;
 };
 
 export type DatasetRecord = {
@@ -178,6 +183,7 @@ export type SelectOption = {
 
 export type BrowserPayload = {
   projectRoot: string;
+  browseMode?: "plot-set-manager" | "image-library" | string;
   appInfo?: AppInfo;
   rootContext?: RootContext;
   selectedPlotId?: string | null;

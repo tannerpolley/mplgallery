@@ -75,6 +75,7 @@ type GalleryLayoutMode = "grid" | "rows" | "columns";
 
 const emptyPayload: BrowserPayload = {
   projectRoot: "",
+  browseMode: "plot-set-manager",
   appInfo: {
     name: "MPLGallery",
     version: "0.1.0",
@@ -124,6 +125,9 @@ function App(props: StreamlitProps) {
   const appInfo = payload.appInfo ?? emptyPayload.appInfo;
   const updateInfo = appInfo?.update ?? null;
   const canInstallUpdate = Boolean(appInfo?.canInstallUpdates && updateInfo?.downloadUrl);
+  const imageLibraryMode = payload.browseMode === "image-library";
+  const itemNoun = imageLibraryMode ? "images" : "plot sets";
+  const workspaceTitle = imageLibraryMode ? "Images" : "Plot sets";
   const rootContext = payload.rootContext ?? {
     activeRoot: payload.projectRoot,
     launchRoot: payload.projectRoot,
@@ -265,6 +269,7 @@ function App(props: StreamlitProps) {
     "",
     effectiveCheckedPlotIds,
     hasUserFilter,
+    itemNoun,
   );
   const selectedRecord = selectedPlotRecord ?? null;
   const maximizedRecord =
@@ -745,6 +750,7 @@ function App(props: StreamlitProps) {
             <FilesPane
               key={selectedFolder}
               plotSets={filteredPlotSets}
+              itemNoun={itemNoun}
               checkedPlotSetIds={checkedPlotSetIds}
               selectedPlotSetId={selectedPlotSetId}
               collapsed={filesCollapsed}
@@ -777,7 +783,7 @@ function App(props: StreamlitProps) {
       <main className="mg-workspace" aria-label="Plot workspace">
         <div className="mg-workspace-header">
           <div className="mg-workspace-heading">
-            <div className="mg-workspace-title">Plot sets</div>
+            <div className="mg-workspace-title">{workspaceTitle}</div>
             <div className="mg-eyebrow">{filteredPlotSets.length} in folder</div>
           </div>
           <div className="mg-header-actions">
@@ -1077,6 +1083,19 @@ function plotSummary(item: DataPlotItem, activeRecord: PlotRecord | null): strin
   return item.dataset?.path ?? activeRecord?.imagePath ?? "Plot set";
 }
 
+function imageDimensionBadge(record: PlotRecord): string | null {
+  if (record.widthPx && record.heightPx) return `${record.widthPx} x ${record.heightPx}px`;
+  return record.imageFormat ?? null;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kib = bytes / 1024;
+  if (kib < 1024) return `${kib.toFixed(kib >= 10 ? 0 : 1)} KiB`;
+  const mib = kib / 1024;
+  return `${mib.toFixed(mib >= 10 ? 0 : 1)} MiB`;
+}
+
 function EmptyGallery({
   message,
   actionLabel,
@@ -1216,6 +1235,7 @@ function FoldersPane({
 
 function FilesPane({
   plotSets,
+  itemNoun,
   checkedPlotSetIds,
   selectedPlotSetId,
   collapsed,
@@ -1227,6 +1247,7 @@ function FilesPane({
   onToggleAllChecked,
 }: {
   plotSets: PlotSetEntity[];
+  itemNoun: string;
   checkedPlotSetIds: Set<string>;
   selectedPlotSetId: string | null;
   collapsed: boolean;
@@ -1266,7 +1287,7 @@ function FilesPane({
             type="button"
             className="mg-pane-toggle"
             disabled={!plotSets.length}
-            aria-label={allChecked ? "Clear all plot sets in folder" : "Select all plot sets in folder"}
+            aria-label={allChecked ? `Clear all ${itemNoun} in folder` : `Select all ${itemNoun} in folder`}
             onClick={() => onToggleAllChecked(!allChecked)}
           >
             {allChecked ? "Clear all" : "Select all"}
@@ -1277,7 +1298,7 @@ function FilesPane({
         </div>
       </div>
       {checkedCount ? <div className="mg-file-selection-summary">{checkedCount} selected in folder</div> : null}
-      <div className="mg-files-list" role="listbox" aria-label="Plot sets">
+      <div className="mg-files-list" role="listbox" aria-label={itemNoun === "images" ? "Images" : "Plot sets"}>
         {plotSets.length ? (
           plotSets.map((plotSet, index) => {
             const checked = checkedPlotSetIds.has(plotSet.plotSetId);
@@ -1320,7 +1341,7 @@ function FilesPane({
             );
           })
         ) : (
-          <div className="mg-empty is-small">No plot sets in this folder.</div>
+          <div className="mg-empty is-small">No {itemNoun} in this folder.</div>
         )}
       </div>
       <label className="mg-debug-toggle">
@@ -1497,6 +1518,8 @@ function DataPlotCard({
               {!item.dataset && csvPreview ? <span>{csvPreview.previewColumns.length} columns</span> : null}
               {item.dataset ? <span>{item.dataset.numericColumns.length} numeric</span> : null}
               {csvPreview && csvPreview.previewTruncated ? <span>preview truncated</span> : null}
+              {activeRecord ? imageDimensionBadge(activeRecord) : null}
+              {activeRecord?.sizeBytes ? <span>{formatBytes(activeRecord.sizeBytes)}</span> : null}
               {figureCount ? <span>{figureCount} figure{figureCount === 1 ? "" : "s"}</span> : null}
               {item.plotSet?.editable ? <span className="good">editable</span> : <span>view only</span>}
               <span>{tabLabel}</span>
@@ -1677,16 +1700,16 @@ function syncLegacyPlotChecks(current: Set<string>, plotSet: PlotSetEntity | und
 
 function folderNodesFromPlotSets(plotSets: PlotSetEntity[], rootLabel: string): FolderViewNode[] {
   const paths = new Set<string>(["."]);
-  const pngRoots = new Set<string>();
+  const figureRoots = new Set<string>();
   plotSets.forEach((plotSet) => {
     const parts = plotSet.folderPath.split("/").filter((part) => part && part !== ".");
-    if (parts.length && plotSet.attachments.some((attachment) => attachment.type === "png")) {
-      pngRoots.add(parts[0]);
+    if (parts.length && plotSet.attachments.some((attachment) => attachment.type === "png" || attachment.type === "svg")) {
+      figureRoots.add(parts[0]);
     }
   });
   plotSets.forEach((plotSet) => {
     const parts = plotSet.folderPath.split("/").filter((part) => part && part !== ".");
-    if (!parts.length || !pngRoots.has(parts[0])) return;
+    if (!parts.length || !figureRoots.has(parts[0])) return;
     let current = "";
     parts.forEach((part) => {
       current = current ? `${current}/${part}` : part;

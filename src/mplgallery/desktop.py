@@ -26,6 +26,7 @@ def launch_desktop_app(
     port: int | None = None,
     choose_root: bool = False,
     include_artifacts: bool = True,
+    image_library: bool = False,
     width: int = 1600,
     height: int = 1000,
     title: str = APP_NAME,
@@ -45,6 +46,7 @@ def launch_desktop_app(
         port=server_port,
         choose_root=choose_root,
         include_artifacts=include_artifacts,
+        image_library=image_library,
     )
     url = f"http://127.0.0.1:{server_port}"
     try:
@@ -77,6 +79,11 @@ def gui_main() -> None:
         default=True,
         help="Show PNG/SVG artifacts alongside draftable CSV files.",
     )
+    parser.add_argument(
+        "--image-library",
+        action="store_true",
+        help="Browse only PNG/SVG image files and do not require plot-set or CSV layout.",
+    )
     parser.add_argument("--width", type=int, default=1600, help="Initial window width.")
     parser.add_argument("--height", type=int, default=1000, help="Initial window height.")
     args = parser.parse_args()
@@ -103,6 +110,7 @@ def gui_main() -> None:
                 port=args.port or 8501,
                 choose_root=args.choose_root,
                 include_artifacts=args.include_artifacts,
+                image_library=args.image_library,
             )
         )
     if args.smoke_browser_launch:
@@ -113,6 +121,7 @@ def gui_main() -> None:
                 port=args.port,
                 choose_root=args.choose_root,
                 include_artifacts=args.include_artifacts,
+                image_library=args.image_library,
                 output_path=args.self_test_out,
             )
         )
@@ -127,6 +136,7 @@ def gui_main() -> None:
             port=args.port,
             choose_root=args.choose_root,
             include_artifacts=args.include_artifacts,
+            image_library=args.image_library,
             width=args.width,
             height=args.height,
         )
@@ -139,6 +149,7 @@ def _start_streamlit_server(
     port: int,
     choose_root: bool,
     include_artifacts: bool,
+    image_library: bool,
 ) -> subprocess.Popen[str]:
     _trace("start_streamlit_server", {"project_root": str(project_root), "port": port, "frozen": bool(getattr(sys, "frozen", False))})
     command = _streamlit_command(
@@ -146,6 +157,7 @@ def _start_streamlit_server(
         port=port,
         choose_root=choose_root,
         include_artifacts=include_artifacts,
+        image_library=image_library,
     )
     env = _streamlit_env()
     return subprocess.Popen(
@@ -166,6 +178,7 @@ def _streamlit_command(
     port: int,
     choose_root: bool,
     include_artifacts: bool,
+    image_library: bool,
 ) -> list[str]:
     if getattr(sys, "frozen", False):
         command = [sys.executable, "--internal-streamlit", str(project_root)]
@@ -174,6 +187,8 @@ def _streamlit_command(
             command.append("--choose-root")
         if include_artifacts:
             command.append("--include-artifacts")
+        if image_library:
+            command.append("--image-library")
         return command
 
     app_path = _streamlit_app_path()
@@ -195,6 +210,8 @@ def _streamlit_command(
         command.append("--choose-root")
     if include_artifacts:
         command.append("--include-artifacts")
+    if image_library:
+        command.append("--image-library")
     return command
 
 
@@ -257,6 +274,7 @@ def _run_internal_streamlit(
     port: int,
     choose_root: bool,
     include_artifacts: bool,
+    image_library: bool,
 ) -> int:
     from streamlit.web import cli as stcli
 
@@ -278,6 +296,8 @@ def _run_internal_streamlit(
         argv.append("--choose-root")
     if include_artifacts:
         argv.append("--include-artifacts")
+    if image_library:
+        argv.append("--image-library")
     previous_argv = sys.argv[:]
     streamlit_env = _streamlit_env()
     previous_env = {key: os.environ.get(key) for key in streamlit_env}
@@ -329,6 +349,7 @@ def _smoke_browser_launch(
     port: int | None,
     choose_root: bool,
     include_artifacts: bool,
+    image_library: bool,
     output_path: Path | None,
 ) -> int:
     resolved_root = project_root.expanduser().resolve()
@@ -339,6 +360,7 @@ def _smoke_browser_launch(
         port=server_port,
         choose_root=choose_root,
         include_artifacts=include_artifacts,
+        image_library=image_library,
     )
     url = f"http://127.0.0.1:{server_port}"
     try:

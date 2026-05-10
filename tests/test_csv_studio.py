@@ -257,6 +257,9 @@ def test_component_payload_includes_dataset_and_owned_plot_metadata(tmp_path: Pa
     assert payload["records"][0]["previewRows"][0] == {"time": 0, "response": 1}
     assert payload["records"][0]["previewTruncated"] is False
     assert payload["records"][0]["previewError"] is None
+    assert payload["browseMode"] == "plot-set-manager"
+    assert payload["records"][0]["sizeBytes"] == index.records[0].image.size_bytes
+    assert payload["records"][0]["modifiedAt"]
 
 
 def test_component_payload_defers_heavy_previews_until_plot_set_is_hydrated(tmp_path: Path) -> None:
@@ -494,6 +497,38 @@ def test_default_csv_studio_index_includes_png_svg_references(tmp_path: Path) ->
     ]
 
 
+def test_image_library_mode_indexes_loose_png_and_svg_without_csv_or_plot_sets(tmp_path: Path) -> None:
+    write(tmp_path / "screenshots" / "run_a" / "overview.png", "not-real-image")
+    write(tmp_path / "screenshots" / "run_a" / "detail.svg", "<svg></svg>")
+    write(tmp_path / "docs" / "_build" / "html" / "ignored.svg", "<svg></svg>")
+    write(tmp_path / "results" / "runs" / "scratch.png", "not-real-image")
+
+    index = build_csv_studio_index(tmp_path, image_library_mode=True)
+
+    assert index.browse_mode == "image-library"
+    assert index.csv_roots == []
+    assert index.datasets == []
+    assert index.plot_sets == []
+    assert [record.image.relative_path.as_posix() for record in index.records] == [
+        "screenshots/run_a/detail.svg",
+        "screenshots/run_a/overview.png",
+    ]
+    assert all(record.csv is None for record in index.records)
+    assert all(record.association_reason == "no csv candidates" for record in index.records)
+    assert [record.visibility_role for record in index.imported_artifacts] == ["reference", "reference"]
+
+
+def test_image_library_mode_is_selected_automatically_for_image_only_projects(tmp_path: Path) -> None:
+    write(tmp_path / "quick_exports" / "plot.svg", "<svg></svg>")
+
+    index = build_csv_studio_index(tmp_path)
+
+    assert index.browse_mode == "image-library"
+    assert [record.image.relative_path.as_posix() for record in index.records] == [
+        "quick_exports/plot.svg"
+    ]
+
+
 def test_artifact_import_is_opt_in_and_reference_only(tmp_path: Path) -> None:
     write(tmp_path / "data" / "table.csv", "x,y\n0,1\n")
     png = write(tmp_path / "data" / "legacy.png", "not-real-image")
@@ -548,3 +583,21 @@ def test_scan_cli_json_reports_csv_studio_roots_without_default_artifact_records
     assert [root["relative_path"] for root in payload["csv_roots"]] == ["data"]
     assert payload["plots_discovered"] == 1
     assert payload["artifact_records"] == 1
+
+
+def test_scan_cli_json_reports_explicit_image_library_mode(tmp_path: Path) -> None:
+    write(tmp_path / "exports" / "overview.png", "not-real-image")
+
+    completed = subprocess.run(
+        ["uv", "run", "mplgallery", "scan", str(tmp_path), "--image-library", "--json"],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(completed.stdout)
+
+    assert payload["mode"] == "image-library"
+    assert payload["csv_roots"] == []
+    assert payload["datasets"] == []
+    assert [record["plot_path"] for record in payload["records"]] == ["exports/overview.png"]

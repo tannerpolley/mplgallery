@@ -64,7 +64,11 @@ def main() -> None:
         return
 
     try:
-        index = _load_index(project_root, include_artifacts=args.include_artifacts)
+        index = _load_index(
+            project_root,
+            include_artifacts=args.include_artifacts,
+            image_library_mode=args.image_library,
+        )
     except Exception as exc:  # pragma: no cover - Streamlit display path
         st.error(f"Unable to scan project: {exc}")
         return
@@ -77,6 +81,7 @@ def main() -> None:
         project_root=project_root,
         records=records,
         datasets=index.datasets,
+        browse_mode=index.browse_mode,
         selected_plot_id=selected_plot_id,
         errors=component_errors(),
         launch_root=launch_root,
@@ -95,6 +100,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--project-root", type=Path, default=Path("."))
     parser.add_argument("--choose-root", action="store_true")
     parser.add_argument("--include-artifacts", action="store_true", default=True)
+    parser.add_argument("--image-library", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -177,15 +183,21 @@ def _app_icon_path() -> str:
     return str(files("mplgallery.assets").joinpath("mplgallery-icon.png"))
 
 
-def _load_index(project_root: Path, *, include_artifacts: bool = False) -> CSVStudioIndex:
+def _load_index(
+    project_root: Path,
+    *,
+    include_artifacts: bool = False,
+    image_library_mode: bool = False,
+) -> CSVStudioIndex:
     fingerprint = _project_fingerprint(project_root)
-    return _load_index_cached(str(project_root), include_artifacts, fingerprint)
+    return _load_index_cached(str(project_root), include_artifacts, image_library_mode, fingerprint)
 
 
 @st.cache_data(show_spinner=False)
 def _load_index_cached(
     project_root: str,
     include_artifacts: bool,
+    image_library_mode: bool,
     fingerprint: tuple[tuple[str, int, int], ...],
 ) -> CSVStudioIndex:
     _ = fingerprint
@@ -193,6 +205,7 @@ def _load_index_cached(
         Path(project_root),
         ensure_drafts=False,
         include_artifacts=include_artifacts,
+        image_library_mode=image_library_mode,
     )
 
 

@@ -193,6 +193,7 @@ class PlotRecipeRecord(BaseModel):
 
 class CSVStudioIndex(BaseModel):
     project_root: Path
+    browse_mode: str = "plot-set-manager"
     csv_roots: list[CSVRootRecord] = Field(default_factory=list)
     datasets: list[DatasetRecord] = Field(default_factory=list)
     records: list["PlotRecord"] = Field(default_factory=list)

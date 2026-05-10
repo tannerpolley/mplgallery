@@ -36,6 +36,8 @@ metadata such as title, labels, scales, figure settings, and series style:
 - Opens a project folder and discovers plot sets under `results/**`.
 - Shows folders and plot files in an IDE-style explorer.
 - Groups each figure with its CSV snapshots, images, and `.mpl.yaml` sidecar.
+- Switches to an image-library mode for loose PNG/SVG folders that do not have
+  CSV files or `results/<plot_set>/` organization.
 - Previews CSV-backed Matplotlib plots and existing PNG/SVG references.
 - Lets you edit appearance metadata such as labels, limits, colors, markers,
   line styles, figure size, grid, and legend settings.
@@ -165,6 +167,20 @@ mplgallery serve .
 mplgallery desktop . --browser
 ```
 
+Use image-library mode for folders that are just PNG/SVG exports, screenshots,
+or reference figures:
+
+```bash
+mplgallery run /path/to/image/folder --image-library
+mplgallery desktop /path/to/image/folder --image-library
+```
+
+If a project contains only PNG/SVG images and no CSV roots or plot-set folders,
+MPLGallery automatically opens it as an image library. The folder pane keeps the
+real folder structure, the files pane lists the images by folder, and each card
+shows view-only image metadata such as format, dimensions, and file size when
+available.
+
 ## Basic Workflow
 
 1. Generate results and figures with your normal project scripts.
@@ -227,6 +243,7 @@ Scan a project:
 ```bash
 mplgallery scan /path/to/project
 mplgallery scan /path/to/project --json
+mplgallery scan /path/to/image/folder --image-library --json
 ```
 
 Validate manifest references:

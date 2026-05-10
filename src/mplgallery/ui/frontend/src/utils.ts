@@ -36,13 +36,14 @@ export function emptyGalleryMessage(
   query: string,
   checkedPlotIds: Set<string>,
   hasUserFilter: boolean,
+  itemNoun = "plot sets",
 ): string {
   if (records.length === 0) {
     return "No plot image files were found. If a manifest exists, the generated artifacts may still need to be built.";
   }
   if (query.trim()) return "No plots match this search.";
   if (checkedPlotIds.size === 0) {
-    return "Select plot sets from Files to build a gallery.";
+    return `Select ${itemNoun} from Files to build a gallery.`;
   }
   return "No visible plots for the current filters.";
 }

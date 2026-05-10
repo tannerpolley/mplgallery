@@ -128,6 +128,7 @@ def build_component_payload(
     records: list[PlotRecord],
     selected_plot_id: str | None,
     datasets: list[DatasetRecord] | None = None,
+    browse_mode: str = "plot-set-manager",
     errors: dict[str, str] | None = None,
     launch_root: Path | None = None,
     recent_roots: tuple[Path, ...] = (),
@@ -159,6 +160,7 @@ def build_component_payload(
     files_view = _files_view_payload(plot_sets)
     return {
         "projectRoot": str(project_root),
+        "browseMode": browse_mode,
         "appInfo": app_info or {},
         "rootContext": {
             "activeRoot": str(project_root),
@@ -401,6 +403,11 @@ def _record_payload(record: PlotRecord, *, include_heavy: bool = True) -> dict[s
         "redraw": redraw.model_dump(mode="json", exclude_none=True),
         "series": [style.model_dump(mode="json", exclude_none=True) for style in series],
         "plotKind": redraw.kind,
+        "widthPx": record.image.width_px,
+        "heightPx": record.image.height_px,
+        "sizeBytes": record.image.size_bytes,
+        "imageFormat": record.image.image_format,
+        "modifiedAt": record.image.modified_at.isoformat(),
     }
 
 
@@ -658,20 +665,20 @@ def _folder_view_payload(
 ) -> dict[str, Any]:
     root_label = project_root.name or "project"
     paths = {"."}
-    png_roots: set[str] = set()
+    figure_roots: set[str] = set()
     for plot_set in plot_sets:
         attachment_types = {str(attachment.get("type")) for attachment in plot_set.get("attachments", [])}
-        if "png" not in attachment_types:
+        if not ({"png", "svg"} & attachment_types):
             continue
         folder = str(plot_set.get("folderPath") or ".")
         parts = [part for part in folder.split("/") if part and part != "."]
         if parts:
-            png_roots.add(parts[0])
+            figure_roots.add(parts[0])
 
     for plot_set in plot_sets:
         folder = str(plot_set.get("folderPath") or ".")
         parts = [part for part in folder.split("/") if part and part != "."]
-        if not parts or parts[0] not in png_roots:
+        if not parts or parts[0] not in figure_roots:
             continue
         current = ""
         paths.add(".")
