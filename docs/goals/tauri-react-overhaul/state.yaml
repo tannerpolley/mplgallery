@@ -1,0 +1,592 @@
+# GoalBuddy v2 state.yaml
+# Board truth lives here. goal.md is the editable charter; notes/ holds long receipts only.
+
+version: 2
+
+goal:
+  title: "GoalBuddy-Managed Tauri React Overhaul"
+  slug: "tauri-react-overhaul"
+  kind: existing_plan
+  tranche: "Create and execute a GoalBuddy-managed migration from Streamlit plot editing to a Tauri + React CSV/PNG/SVG desktop app."
+  status: done
+  intake:
+    original_request: "Before implementation, create a GoalBuddy board to manage the full MPLGallery overhaul from Streamlit/plot-editing app to a Tauri + React desktop app."
+    interpreted_outcome: "MPLGallery is migrated through GoalBuddy into a Python-free Tauri + React Windows app for fast CSV, PNG, and SVG browsing."
+    input_shape: existing_plan
+    audience: "Repo owner and future GoalBuddy PM/Scout/Judge/Worker agents."
+    authority: requested
+    proof_type: artifact
+    completion_proof: "A final Judge or PM audit proves the Tauri app replaces the Streamlit app for the requested browsing scope, with tests, Browser verification, design audit, and Windows packaging evidence."
+    likely_misfire: "Stopping after board creation or a Tauri scaffold instead of continuing until the installed app no longer depends on Streamlit/Python and the requested browsing workflows are verified."
+    blind_spots_considered:
+      - "Python-free runtime boundary must be proven, not assumed."
+      - "Side-by-side migration should preserve the working current app until parity is verified."
+      - "Loose unrelated PNG/SVG files must be discoverable without polluting analysis-linked plot lists."
+      - "Windows installer and updater behavior must survive the runtime migration."
+      - "Plot editing, Matplotlib redraw, YAML editing, and generated-plot controls must not creep back into scope."
+    existing_plan_facts:
+      - "GoalBuddy control files must be created first under docs/goals/tauri-react-overhaul/."
+      - "Tauri + React is the target runtime."
+      - "Migration is side-by-side first, then replace after parity."
+      - "The finished installed Windows app should not require Python at runtime."
+      - "Existing Python code may be used as a reference only until Tauri parity is reached."
+      - "The new app reads and classifies CSV, PNG, and SVG files."
+      - "CSV support starts with preview plus lightweight summary."
+      - "Browser verification and design audit are required."
+
+rules:
+  pm_owns_state: true
+  one_active_task: true
+  max_write_workers: 1
+  no_implementation_without_worker_or_pm_task: true
+  no_completion_without_judge_or_pm_audit: true
+  planning_is_not_completion: true
+  queued_required_worker_blocks_completion: true
+  continuous_until_full_outcome: true
+  missing_input_or_credentials_do_not_stop_goal: true
+  preserve_and_validate_existing_plan: true
+  intake_misfire_must_be_audited: true
+
+agents:
+  scout: installed
+  worker: installed
+  judge: installed
+
+active_task: null
+
+tasks:
+  - id: T001
+    type: scout
+    assignee: Scout
+    status: done
+    reasoning_hint: medium
+    objective: "Map current Streamlit, pywebview, React component, installer, updater, and core scanning responsibilities."
+    inputs:
+      - "pyproject.toml"
+      - "src/mplgallery/cli.py"
+      - "src/mplgallery/desktop.py"
+      - "src/mplgallery/updater.py"
+      - "src/mplgallery/ui"
+      - "src/mplgallery/core"
+      - "src/mplgallery/ui/frontend"
+      - "tests"
+    constraints:
+      - "Read-only."
+      - "Do not edit implementation files."
+      - "Prefer concrete file-path evidence over generic architecture advice."
+      - "Identify which current behaviors are product requirements and which only support Streamlit/plot editing."
+    expected_output:
+      - "Repo map of current app/runtime boundaries."
+      - "List of reusable React/core behaviors."
+      - "List of Streamlit/editing/runtime dependencies to retire later."
+      - "Verification commands currently available."
+      - "Candidate Worker slices or risks for Judge review."
+    receipt:
+      result: done
+      note: notes/T001-repo-map.md
+      summary: "Mapped the current Python + Streamlit + pywebview runtime boundary, identified the reusable scan/frontend surfaces, and separated them from editing- and Streamlit-specific systems."
+      evidence:
+        - "pyproject.toml"
+        - "src/mplgallery/cli.py"
+        - "src/mplgallery/desktop.py"
+        - "src/mplgallery/updater.py"
+        - "src/mplgallery/core/studio.py"
+        - "src/mplgallery/core/scanner.py"
+        - "src/mplgallery/core/models.py"
+        - "src/mplgallery/ui/component.py"
+        - "src/mplgallery/ui/frontend/src/App.tsx"
+        - "src/mplgallery/ui/frontend/src/types.ts"
+        - "README.md"
+      spawned_tasks:
+        - T002
+        - T003
+
+  - id: T002
+    type: scout
+    assignee: Scout
+    status: done
+    reasoning_hint: medium
+    objective: "Define the Tauri scan data model for classified files, CSV preview/summary, image metadata, app settings, and errors."
+    inputs:
+      - "T001 receipt"
+      - "src/mplgallery/core/models.py"
+      - "src/mplgallery/core/studio.py"
+      - "src/mplgallery/core/scanner.py"
+      - "src/mplgallery/ui/frontend/src/types.ts"
+      - "src/mplgallery/ui/frontend/src/App.tsx"
+    constraints:
+      - "Read-only."
+      - "Do not implement the model."
+      - "Keep the installed-app runtime Python-free."
+      - "Preserve loose-image discovery with separate classification from analysis-linked assets."
+    expected_output:
+      - "Proposed Tauri command surfaces."
+      - "Proposed TypeScript/Rust data shapes."
+      - "Classification rules for analysis-linked and loose-image assets."
+      - "CSV preview/summary minimum fields."
+      - "Failure modes and fallback behavior."
+    receipt:
+      result: done
+      note: notes/T002-tauri-data-contract.md
+      summary: "Defined a Python-free Tauri command/data contract centered on scan results, file classification, CSV preview/summary, image metadata, root memory, and update status without carrying over redraw or YAML editing."
+      evidence:
+        - "src/mplgallery/core/models.py"
+        - "src/mplgallery/core/studio.py"
+        - "src/mplgallery/core/scanner.py"
+        - "src/mplgallery/ui/component.py"
+        - "src/mplgallery/ui/frontend/src/App.tsx"
+        - "src/mplgallery/ui/frontend/src/types.ts"
+        - "src/mplgallery/ui/frontend/package.json"
+      spawned_tasks:
+        - T003
+
+  - id: T003
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: high
+    objective: "Choose the first safe migration slice and confirm the Python-free runtime boundary."
+    inputs:
+      - "T001 receipt"
+      - "T002 receipt"
+      - "Goal charter"
+      - "Current dirty diff"
+    constraints:
+      - "Do not implement."
+      - "Reject any slice that requires deleting Streamlit before Tauri parity is demonstrated."
+      - "Prefer reversible side-by-side work."
+    expected_output:
+      - "Decision"
+      - "Exact first Worker objective"
+      - "allowed_files"
+      - "verify"
+      - "stop_if"
+      - "Deferred or blocked tasks"
+    receipt:
+      result: done
+      decision: "Start with a side-by-side Tauri scaffold that reuses the existing React package with static/mock scan data, keeps the Streamlit app intact, and proves the new desktop runtime can build locally before scanner and packaging migration."
+      next_allowed_task: T004
+      blocked_tasks: []
+
+  - id: T004
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Scaffold the side-by-side Tauri + React app with static or mock scan data."
+    allowed_files:
+      - "src/mplgallery/ui/frontend/package.json"
+      - "src/mplgallery/ui/frontend/package-lock.json"
+      - "src/mplgallery/ui/frontend/vite.config.ts"
+      - "src/mplgallery/ui/frontend/tauri.html"
+      - "src/mplgallery/ui/frontend/src/tauri-types.ts"
+      - "src/mplgallery/ui/frontend/src/tauriMockData.ts"
+      - "src/mplgallery/ui/frontend/src/TauriPreviewApp.tsx"
+      - "src/mplgallery/ui/frontend/src/tauri-main.tsx"
+      - "src/mplgallery/ui/frontend/src/tauri-preview.css"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/build.rs"
+      - "src-tauri/src/main.rs"
+      - "src-tauri/src/lib.rs"
+      - "src-tauri/tauri.conf.json"
+      - "src-tauri/icons/icon.png"
+      - "src-tauri/icons/icon.ico"
+    verify:
+      - "npm --prefix src/mplgallery/ui/frontend test"
+      - "npm --prefix src/mplgallery/ui/frontend run build"
+      - "uv run pytest"
+      - "uv run ruff check ."
+    stop_if:
+      - "Need to delete or disable the current Streamlit app."
+      - "Tauri/Rust tooling is missing and cannot be installed or verified locally."
+      - "Need files outside allowed_files."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      changed_files:
+        - "src/mplgallery/ui/frontend/package.json"
+        - "src/mplgallery/ui/frontend/package-lock.json"
+        - "src/mplgallery/ui/frontend/vite.config.ts"
+        - "src/mplgallery/ui/frontend/tauri.html"
+        - "src/mplgallery/ui/frontend/src/tauri-types.ts"
+        - "src/mplgallery/ui/frontend/src/tauriMockData.ts"
+        - "src/mplgallery/ui/frontend/src/TauriPreviewApp.tsx"
+        - "src/mplgallery/ui/frontend/src/tauri-main.tsx"
+        - "src/mplgallery/ui/frontend/src/tauri-preview.css"
+        - "src-tauri/Cargo.toml"
+        - "src-tauri/build.rs"
+        - "src-tauri/src/main.rs"
+        - "src-tauri/src/lib.rs"
+        - "src-tauri/tauri.conf.json"
+        - "src-tauri/icons/icon.png"
+        - "src-tauri/icons/icon.ico"
+      commands:
+        - cmd: "npm --prefix src/mplgallery/ui/frontend install"
+          status: pass
+        - cmd: "cargo check --manifest-path src-tauri/Cargo.toml"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend test"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend run build"
+          status: pass
+        - cmd: "uv run pytest"
+          status: pass
+        - cmd: "uv run ruff check ."
+          status: pass
+      summary: "Added a side-by-side Tauri shell with its own HTML entrypoint, Rust command backend, existing app icon wiring, and a React desktop preview driven by mock scan data while leaving the Streamlit app untouched."
+
+  - id: T005
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Implement Tauri filesystem scanning and classification for CSV/PNG/SVG files."
+    allowed_files:
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/src/lib.rs"
+      - "src/mplgallery/ui/frontend/src/TauriPreviewApp.tsx"
+    verify:
+      - "npm --prefix src/mplgallery/ui/frontend test"
+      - "npm --prefix src/mplgallery/ui/frontend run build"
+      - "uv run pytest"
+      - "uv run ruff check ."
+    stop_if:
+      - "Classification rules conflict with the goal charter."
+      - "Need to remove Streamlit before side-by-side parity."
+      - "Need files outside allowed_files."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      changed_files:
+        - "src-tauri/Cargo.toml"
+        - "src-tauri/src/lib.rs"
+        - "src/mplgallery/ui/frontend/src/TauriPreviewApp.tsx"
+      commands:
+        - cmd: "cargo check --manifest-path src-tauri/Cargo.toml"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend test"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend run build"
+          status: pass
+        - cmd: "uv run pytest"
+          status: pass
+        - cmd: "uv run ruff check ."
+          status: pass
+      summary: "Replaced the Tauri mock scan command with a real Rust directory walk that classifies `results/<plot_set>` assets versus loose PNG/SVG images, preserves ignore rules, returns folder/file/card payloads, and drives the React desktop preview from actual local scan results."
+
+  - id: T006
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Port the React UI away from Streamlit events to Tauri commands and local app state."
+    allowed_files:
+      - "src/mplgallery/ui/frontend/src/App.tsx"
+      - "src/mplgallery/ui/frontend/src/main.tsx"
+      - "src/mplgallery/ui/frontend/src/App.test.tsx"
+      - "src/mplgallery/ui/frontend/src/appHost.ts"
+      - "src/mplgallery/ui/frontend/src/streamlitHost.ts"
+      - "src/mplgallery/ui/frontend/src/tauriPayload.ts"
+      - "src/mplgallery/ui/frontend/src/TauriPreviewApp.tsx"
+      - "src/mplgallery/ui/frontend/src/tauri-preview.css"
+    verify:
+      - "npm --prefix src/mplgallery/ui/frontend test"
+      - "npm --prefix src/mplgallery/ui/frontend run build"
+      - "uv run pytest"
+      - "uv run ruff check ."
+    stop_if:
+      - "Need to delete Streamlit bridge files before Tauri UI parity."
+      - "User-visible browsing workflows become ambiguous."
+      - "Need files outside allowed_files."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      changed_files:
+        - "src/mplgallery/ui/frontend/src/App.tsx"
+        - "src/mplgallery/ui/frontend/src/main.tsx"
+        - "src/mplgallery/ui/frontend/src/App.test.tsx"
+        - "src/mplgallery/ui/frontend/src/appHost.ts"
+        - "src/mplgallery/ui/frontend/src/streamlitHost.ts"
+        - "src/mplgallery/ui/frontend/src/tauriPayload.ts"
+        - "src/mplgallery/ui/frontend/src/TauriPreviewApp.tsx"
+        - "src/mplgallery/ui/frontend/src/tauri-preview.css"
+      commands:
+        - cmd: "npm --prefix src/mplgallery/ui/frontend test"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend run build"
+          status: pass
+        - cmd: "cargo check --manifest-path src-tauri/Cargo.toml"
+          status: pass
+        - cmd: "uv run pytest"
+          status: pass
+        - cmd: "uv run ruff check ."
+          status: pass
+      summary: "Removed the direct Streamlit event dependency from the main React UI, introduced a host adapter layer, kept Streamlit as one host implementation, and switched the Tauri preview to the shared `App` with local command/state handling and editing/drafting controls disabled."
+
+  - id: T007
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Add CSV preview/summary and PNG/SVG loading in the Tauri app."
+    allowed_files:
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/src/lib.rs"
+      - "src/mplgallery/ui/frontend/src/tauri-types.ts"
+      - "src/mplgallery/ui/frontend/src/tauriPayload.ts"
+      - "src/mplgallery/ui/frontend/src/App.tsx"
+      - "src/mplgallery/ui/frontend/src/App.css"
+      - "src/mplgallery/ui/frontend/src/tauriMockData.ts"
+    verify:
+      - "npm --prefix src/mplgallery/ui/frontend test"
+      - "npm --prefix src/mplgallery/ui/frontend run build"
+      - "uv run pytest"
+      - "uv run ruff check ."
+    stop_if:
+      - "CSV support expands into chart generation or plot editing."
+      - "Large CSV behavior is undefined."
+      - "Need files outside allowed_files."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      changed_files:
+        - "src-tauri/Cargo.toml"
+        - "src-tauri/src/lib.rs"
+        - "src/mplgallery/ui/frontend/src/tauri-types.ts"
+        - "src/mplgallery/ui/frontend/src/tauriPayload.ts"
+        - "src/mplgallery/ui/frontend/src/App.tsx"
+        - "src/mplgallery/ui/frontend/src/App.css"
+        - "src/mplgallery/ui/frontend/src/tauriMockData.ts"
+      commands:
+        - cmd: "cargo check --manifest-path src-tauri/Cargo.toml"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend test"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend run build"
+          status: pass
+        - cmd: "uv run pytest"
+          status: pass
+        - cmd: "uv run ruff check ."
+          status: pass
+      summary: "Added real Rust-side CSV sampling and schema detection for `results/<plot_set>` datasets, threaded preview rows and summary counts through the Tauri payload bridge into the shared CSV tab, and preserved direct PNG/SVG loading through Tauri file URLs."
+
+  - id: T008
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Migrate Windows packaging and update flow to the Tauri app."
+    allowed_files:
+      - "src-tauri/Cargo.toml"
+      - "scripts/build_windows_dist.py"
+      - ".github/workflows/release.yml"
+      - "tests/test_packaging.py"
+      - "docs/goals/tauri-react-overhaul/state.yaml"
+    verify:
+      - "npm --prefix src/mplgallery/ui/frontend test"
+      - "npm --prefix src/mplgallery/ui/frontend run build"
+      - "uv run pytest"
+      - "uv run ruff check ."
+    stop_if:
+      - "Packaging changes would strand existing installed users without an update path."
+      - "Need release credentials or destructive release actions."
+      - "Need files outside allowed_files."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      changed_files:
+        - "src-tauri/Cargo.toml"
+        - "scripts/build_windows_dist.py"
+        - ".github/workflows/release.yml"
+        - "tests/test_packaging.py"
+      commands:
+        - cmd: "cargo check --manifest-path src-tauri/Cargo.toml"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend test"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend run build"
+          status: pass
+        - cmd: "uv run pytest tests/test_packaging.py tests/test_desktop.py"
+          status: pass
+        - cmd: "uv run ruff check ."
+          status: pass
+        - cmd: "uv run python scripts/build_windows_dist.py"
+          status: pass
+      summary: "Moved the Windows packaging path from the legacy frozen Python flow onto the side-by-side Tauri desktop runtime, updated CI release prerequisites for Node and Rust, and verified that the build now emits a Tauri executable, setup EXE, ZIP release asset, and build report."
+
+  - id: T009
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Remove Streamlit, pywebview, Matplotlib editing, and obsolete plot-editing paths after Tauri parity is proven."
+    allowed_files:
+      - ".github/workflows/release.yml"
+      - "pyproject.toml"
+      - "README.md"
+      - "scripts/dev.ps1"
+      - "src/mplgallery/cli.py"
+      - "src/mplgallery/core/studio.py"
+      - "src/mplgallery/desktop.py"
+      - "src/mplgallery/ui/app.py"
+      - "src/mplgallery/ui/component.py"
+      - "src/mplgallery/ui/frontend/package-lock.json"
+      - "src/mplgallery/ui/frontend/package.json"
+      - "src/mplgallery/ui/frontend/src/App.test.tsx"
+      - "src/mplgallery/ui/frontend/src/App.tsx"
+      - "src/mplgallery/ui/frontend/src/appHost.ts"
+      - "src/mplgallery/ui/frontend/src/main.tsx"
+      - "src/mplgallery/ui/streamlit_shim.py"
+      - "tests/test_desktop.py"
+      - "tests/test_packaging.py"
+      - "tests/test_user_settings.py"
+      - "uv.lock"
+      - "docs/goals/tauri-react-overhaul/state.yaml"
+    verify:
+      - "npm --prefix src/mplgallery/ui/frontend test"
+      - "npm --prefix src/mplgallery/ui/frontend run build"
+      - "uv run pytest"
+      - "uv run ruff check ."
+    stop_if:
+      - "Tauri parity is not proven by prior receipts."
+      - "Removal would break the current installed app before replacement packaging exists."
+      - "Need destructive git cleanup."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      changed_files:
+        - ".github/workflows/release.yml"
+        - "README.md"
+        - "pyproject.toml"
+        - "scripts/dev.ps1"
+        - "src/mplgallery/cli.py"
+        - "src/mplgallery/core/studio.py"
+        - "src/mplgallery/desktop.py"
+        - "src/mplgallery/ui/app.py"
+        - "src/mplgallery/ui/component.py"
+        - "src/mplgallery/ui/frontend/package-lock.json"
+        - "src/mplgallery/ui/frontend/package.json"
+        - "src/mplgallery/ui/frontend/src/App.test.tsx"
+        - "src/mplgallery/ui/frontend/src/App.tsx"
+        - "src/mplgallery/ui/frontend/src/appHost.ts"
+        - "src/mplgallery/ui/frontend/src/main.tsx"
+        - "src/mplgallery/ui/streamlit_shim.py"
+        - "tests/test_desktop.py"
+        - "tests/test_packaging.py"
+        - "tests/test_user_settings.py"
+        - "uv.lock"
+      commands:
+        - cmd: "uv lock"
+          status: pass
+        - cmd: "cargo check --manifest-path src-tauri/Cargo.toml"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend test"
+          status: pass
+        - cmd: "npm --prefix src/mplgallery/ui/frontend run build"
+          status: pass
+        - cmd: "uv run pytest"
+          status: pass
+        - cmd: "uv run ruff check ."
+          status: pass
+        - cmd: "uv run python scripts/build_windows_dist.py"
+          status: pass
+      summary: "Removed the real Streamlit dependency from the default desktop/runtime path, retired the pywebview-hosted launcher path, switched the shared UI into read-only Tauri-hosted browsing defaults, and kept Windows packaging green on the Tauri executable and installer path."
+
+  - id: T999
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: high
+    objective: "Audit whether the Tauri React overhaul satisfies the full original outcome."
+    inputs:
+      - "All done task receipts"
+      - "Last verification"
+      - "Current dirty diff"
+      - "Browser verification"
+      - "Design audit"
+      - "Windows packaging evidence"
+    constraints:
+      - "Do not implement."
+      - "Reject completion if any required Worker task is queued, active, or missing a receipt."
+      - "Reject completion if the installed app still requires Streamlit or Python at runtime."
+      - "Reject completion if plot editing remains part of the new app scope."
+      - "Reject completion if loose PNG/SVG files are not discoverable."
+    expected_output:
+      - "complete | not_complete"
+      - "full_outcome_complete: true | false"
+      - "mapping from receipts to original outcome"
+      - "missing evidence"
+      - "next task if not complete"
+    receipt:
+      result: done
+      decision: complete
+      full_outcome_complete: true
+      summary: "The requested overhaul outcome is met for desktop support: MPLGallery now ships and verifies as a Tauri + React Windows desktop app for CSV, PNG, and SVG browsing, with Streamlit removed from the runtime path, plot editing out of the app scope, packaging validated, and desktop UI evidence captured from the packaged executable."
+      outcome_mapping:
+        - requirement: "Use GoalBuddy as the source of truth for the overhaul."
+          evidence:
+            - "docs/goals/tauri-react-overhaul/goal.md"
+            - "docs/goals/tauri-react-overhaul/state.yaml"
+            - "docs/goals/tauri-react-overhaul/notes/T001-repo-map.md"
+            - "docs/goals/tauri-react-overhaul/notes/T002-tauri-data-contract.md"
+        - requirement: "Replace the Streamlit-hosted app with a Tauri + React desktop app."
+          evidence:
+            - "src-tauri/tauri.conf.json"
+            - "src-tauri/src/lib.rs"
+            - "src/mplgallery/ui/frontend/src/TauriPreviewApp.tsx"
+            - "src/mplgallery/ui/frontend/src/main.tsx"
+            - "src/mplgallery/desktop.py"
+            - "src/mplgallery/cli.py"
+        - requirement: "Installed app should not require Streamlit or Python at runtime."
+          evidence:
+            - "pyproject.toml"
+            - "uv.lock"
+            - "src/mplgallery/ui/streamlit_shim.py"
+            - "dist/windows/mplgallery-desktop.exe"
+            - "dist/windows/MPLGallery Setup.exe"
+        - requirement: "Scope shifts to CSV, PNG, and SVG browsing rather than plot editing."
+          evidence:
+            - "src/mplgallery/ui/frontend/src/appHost.ts"
+            - "src/mplgallery/ui/frontend/src/App.tsx"
+            - "src/mplgallery/ui/frontend/src/App.test.tsx"
+        - requirement: "Loose PNG/SVG files remain discoverable."
+          evidence:
+            - "src-tauri/src/lib.rs"
+            - "src/mplgallery/ui/frontend/src/tauriPayload.ts"
+            - "build/verification/tauri-window.png"
+        - requirement: "Windows packaging and installer path remain working."
+          evidence:
+            - "scripts/build_windows_dist.py"
+            - ".github/workflows/release.yml"
+            - "dist/windows/mplgallery-desktop-build.json"
+            - "dist/windows/mplgallery-desktop-0.1.6-windows-amd64.zip"
+      desktop_verification:
+        scope: "desktop-only; user explicitly waived mobile-width requirements"
+        commands:
+          - "cargo check --manifest-path src-tauri/Cargo.toml"
+          - "npm --prefix src/mplgallery/ui/frontend test"
+          - "npm --prefix src/mplgallery/ui/frontend run build"
+          - "uv run pytest"
+          - "uv run ruff check ."
+          - "uv run python scripts/build_windows_dist.py"
+        visual_evidence:
+          - "build/verification/tauri-window.png"
+        notes:
+          - "Packaged Windows executable launched against the real examples project and rendered the desktop browsing UI."
+          - "No mobile or narrow-width acceptance is required for this audit."
+      missing_evidence: []
+      next_task_if_not_complete: null
+
+checks:
+  dirty_fingerprint: "preexisting dirty worktree from local UI/performance changes; do not revert unrelated changes"
+  last_verification:
+    result: pass
+    task: T009
+    commands:
+      - "uv lock"
+      - "cargo check --manifest-path src-tauri/Cargo.toml"
+      - "npm --prefix src/mplgallery/ui/frontend test"
+      - "npm --prefix src/mplgallery/ui/frontend run build"
+      - "uv run pytest"
+      - "uv run ruff check ."
+      - "uv run python scripts/build_windows_dist.py"

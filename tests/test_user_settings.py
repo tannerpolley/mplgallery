@@ -4,8 +4,6 @@ from datetime import datetime
 import json
 from pathlib import Path
 
-import streamlit as st
-
 from mplgallery.core.models import DiscoveredFile, FileKind, PlotRecord
 from mplgallery.core.user_settings import (
     UserSettings,
@@ -17,6 +15,7 @@ from mplgallery.core.user_settings import (
 )
 from mplgallery.ui.component import ComponentEvent, process_component_event
 from mplgallery.ui.root_state import change_active_root, reset_active_root, resolve_initial_root
+from mplgallery.ui.streamlit_shim import st
 
 
 def test_settings_path_respects_config_home(monkeypatch, tmp_path: Path) -> None:
@@ -260,6 +259,22 @@ def test_component_root_event_updates_session_and_clears_stale_state(
     assert "mplgallery_selected_plot_id" not in st.session_state
     assert "mplgallery_component_errors" not in st.session_state
     assert load_user_settings().last_active_root == next_root.resolve()
+
+
+def test_refresh_event_bumps_index_revision() -> None:
+    st.session_state.clear()
+
+    changed = process_component_event(
+        event=ComponentEvent(
+            id="refresh-1",
+            type="refresh_index",
+        ),
+        project_root=Path.cwd(),
+        launch_root=Path.cwd(),
+    )
+
+    assert changed is True
+    assert st.session_state["mplgallery_index_revision"] == 1
 
 
 def test_component_root_event_rejects_missing_root_without_switching(

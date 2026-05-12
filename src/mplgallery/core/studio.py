@@ -135,7 +135,7 @@ def build_csv_studio_index(
     image_library_mode: bool = False,
     sample_rows: int = DEFAULT_SAMPLE_ROWS,
 ) -> CSVStudioIndex:
-    """Build the CSV-first index used by the CLI and Streamlit host."""
+    """Build the CSV-first index used by the CLI and desktop compatibility helpers."""
     root = Path(project_root).expanduser().resolve()
     if image_library_mode:
         scan = scan_project(root)

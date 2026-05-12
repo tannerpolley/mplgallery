@@ -2,17 +2,11 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import type { AppHost } from "./appHost";
 import type { BrowserPayload } from "./types";
 
-const streamlitMock = vi.hoisted(() => ({
-  setComponentValue: vi.fn(),
-}));
-
+const emitEventMock = vi.hoisted(() => vi.fn());
 const openMock = vi.hoisted(() => vi.fn());
-
-vi.mock("streamlit-component-lib", () => ({
-  Streamlit: streamlitMock,
-}));
 
 function payload(overrides: Partial<BrowserPayload> = {}): BrowserPayload {
   return {
@@ -161,6 +155,15 @@ function payload(overrides: Partial<BrowserPayload> = {}): BrowserPayload {
   };
 }
 
+const host: AppHost = {
+  emitEvent: emitEventMock,
+  openExternal: openMock,
+};
+
+function renderApp(nextPayload: BrowserPayload) {
+  return render(<App payload={nextPayload} host={host} />);
+}
+
 function expandTreeFolder(label: string) {
   fireEvent.click(screen.getByRole("button", { name: `Expand ${label}` }));
 }
@@ -175,13 +178,15 @@ function foldersPane() {
 
 describe("App explorer", () => {
   beforeEach(() => {
-    streamlitMock.setComponentValue.mockClear();
+    emitEventMock.mockClear();
     openMock.mockClear();
     vi.stubGlobal("open", openMock);
+    window.localStorage.clear();
   });
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
   });
 
   it("keeps gallery empty until a CSV or image is selected", () => {
@@ -255,27 +260,38 @@ describe("App explorer", () => {
   });
 
   it("uses an IDE-style root control and emits root/refresh actions", () => {
-    render(<App payload={payload()} />);
+    renderApp(payload());
 
     fireEvent.click(screen.getByRole("button", { name: "Project root mplgallery" }));
     expect(screen.getByRole("dialog", { name: "Project root menu" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open root" }));
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "change_project_root",
-        root_path: "C:/Users/Tanner/Documents/git/mplgallery",
-      }),
-    });
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "change_project_root",
+      root_path: "C:/Users/Tanner/Documents/git/mplgallery",
+    }));
 
     fireEvent.click(screen.getByRole("button", { name: /Refresh/ }));
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({ type: "refresh_index" }),
-    });
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "refresh_index",
+    }));
   });
 
   it("prompts for available desktop app updates", () => {
+    const updateHost: AppHost = {
+      ...host,
+      capabilities: {
+        supportsDrafting: false,
+        supportsEditing: false,
+        supportsBrowseDialog: true,
+        supportsRootReset: true,
+        supportsInlineUpdateInstall: true,
+      },
+    };
     render(
       <App
+        host={updateHost}
         payload={payload({
           appInfo: {
             name: "MPLGallery",
@@ -299,19 +315,18 @@ describe("App explorer", () => {
     expect(screen.getByText("Update 0.2.0")).toBeInTheDocument();
     const updateButton = screen.getByRole("button", { name: "Install MPLGallery 0.2.0" });
     fireEvent.click(updateButton);
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "install_update",
-        download_url: "https://github.com/tannerpolley/mplgallery/releases/download/v0.2.0/mplgallery.zip",
-      }),
-    });
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "install_update",
+      download_url: "https://github.com/tannerpolley/mplgallery/releases/download/v0.2.0/mplgallery.zip",
+    }));
     expect(updateButton).toBeDisabled();
     expect(screen.getAllByText("Downloading update...").length).toBeGreaterThan(0);
     expect(openMock).not.toHaveBeenCalled();
   });
 
   it("opens settings and emits project memory setting events", () => {
-    render(<App payload={payload()} />);
+    renderApp(payload());
 
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
@@ -319,22 +334,22 @@ describe("App explorer", () => {
     expect(screen.getByLabelText("Restore last project on startup")).not.toBeChecked();
 
     fireEvent.click(screen.getByLabelText("Restore last project on startup"));
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "set_user_setting",
-        setting_key: "restore_last_project_on_startup",
-        setting_value: true,
-      }),
-    });
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "set_user_setting",
+      setting_key: "restore_last_project_on_startup",
+      setting_value: true,
+    }));
 
     fireEvent.click(screen.getByRole("button", { name: "Clear recent projects" }));
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({ type: "clear_recent_roots" }),
-    });
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "clear_recent_roots",
+    }));
   });
 
   it("switches between plot set and picture browsing modes", () => {
-    render(<App payload={payload()} />);
+    renderApp(payload());
 
     const modeSwitch = screen.getByRole("group", { name: "Browse mode" });
     expect(within(modeSwitch).getByRole("button", { name: "Plot sets" })).toHaveAttribute("aria-pressed", "true");
@@ -343,12 +358,31 @@ describe("App explorer", () => {
     fireEvent.click(within(modeSwitch).getByRole("button", { name: "Pictures" }));
     expect(within(modeSwitch).getByRole("button", { name: "Pictures" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Images")).toBeInTheDocument();
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "set_browse_mode",
-        browse_mode: "image-library",
-      }),
-    });
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "set_browse_mode",
+      browse_mode: "image-library",
+    }));
+  });
+
+  it("creates and reapplies remembered custom sets", () => {
+    renderApp(payload());
+
+    fireEvent.click(screen.getByLabelText("Show alpha.csv"));
+    fireEvent.click(screen.getByRole("button", { name: "Create set" }));
+    fireEvent.change(screen.getByLabelText("Custom set name"), { target: { value: "My set" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save set" }));
+
+    expect(screen.getByRole("button", { name: /My set/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear gallery" }));
+    expect(screen.getByLabelText("Show alpha.csv")).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: /My set/ }));
+    expect(screen.getByLabelText("Show alpha.csv")).toBeChecked();
+
+    cleanup();
+    renderApp(payload());
+    expect(screen.getByRole("button", { name: /My set/ })).toBeInTheDocument();
   });
 
   it("surfaces update installer failures in status", () => {
@@ -382,7 +416,7 @@ describe("App explorer", () => {
   });
 
   it("filters the explorer to CSV files or figure files from the workspace controls", () => {
-    render(<App payload={payload()} />);
+    renderApp(payload());
 
     const filterToolbar = screen.getByRole("toolbar", { name: "File type filters" });
     fireEvent.click(within(filterToolbar).getByRole("button", { name: "SVG" }));
@@ -397,18 +431,17 @@ describe("App explorer", () => {
   });
 
   it("clicking a plot-set row checks it and adds the card", () => {
-    render(<App payload={payload()} />);
+    renderApp(payload());
 
     const alphaRow = within(filesPane()).getByText("alpha.csv");
     fireEvent.click(alphaRow);
 
     expect(screen.getByLabelText("Show alpha.csv")).toBeChecked();
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "set_checked_plot_sets",
-        plot_set_ids: ["data__processed__alpha"],
-      }),
-    });
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "set_checked_plot_sets",
+      plot_set_ids: ["data__processed__alpha"],
+    }));
     expect(screen.queryByRole("complementary", { name: /CSV preview for alpha.csv/ })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "SVG" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("img", { name: "alpha.svg" })).toBeInTheDocument();
@@ -416,12 +449,11 @@ describe("App explorer", () => {
     fireEvent.click(alphaRow);
 
     expect(screen.getByLabelText("Show alpha.csv")).not.toBeChecked();
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "set_checked_plot_sets",
-        plot_set_ids: [],
-      }),
-    });
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "set_checked_plot_sets",
+      plot_set_ids: [],
+    }));
     expect(screen.queryByRole("img", { name: "alpha.svg" })).not.toBeInTheDocument();
   });
 
@@ -445,68 +477,116 @@ describe("App explorer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Help" }));
 
     expect(screen.getByRole("dialog", { name: "Help" })).toBeInTheDocument();
-    expect(screen.getByText("Drag checked cards to reorder them, or drag the lower-right corner to resize them.")).toBeInTheDocument();
+    expect(screen.getByText("Drag checked cards to reorder them, or drag the lower-right corner to resize the whole gallery.")).toBeInTheDocument();
   });
 
-  it("lets the plot card resize from the corner handle", () => {
-    render(<App payload={payload()} />);
+  it("lets the plot card resize the whole gallery from the corner handle", () => {
+    const base = payload();
+    render(
+      <App
+        payload={payload({
+          plotSets: [
+            base.plotSets![0],
+            {
+              ...base.plotSets![0],
+              plotSetId: "data__processed__beta",
+              title: "beta.csv",
+              preferredFigure: {
+                ...base.plotSets![0].preferredFigure!,
+                id: "data__processed__beta:svg",
+                displayName: "beta.svg",
+                plotId: "data__processed__beta:svg",
+              },
+              attachments: base.plotSets![0].attachments.map((attachment) => {
+                if (attachment.type === "svg") {
+                  return {
+                    ...attachment,
+                    id: "data__processed__beta:svg",
+                    displayName: "beta.svg",
+                    plotId: "data__processed__beta:svg",
+                  };
+                }
+                if (attachment.type === "png") {
+                  return {
+                    ...attachment,
+                    id: "data__processed__beta:png",
+                    displayName: "beta.png",
+                    plotId: "data__processed__beta:png",
+                  };
+                }
+                if (attachment.type === "csv") {
+                  return {
+                    ...attachment,
+                    id: "data__processed__beta:csv",
+                    datasetId: "data__processed__beta",
+                  };
+                }
+                return attachment;
+              }),
+            },
+          ],
+          records: [
+            ...base.records,
+            {
+              ...base.records[0],
+              id: "data__processed__beta:svg",
+              name: "beta.svg",
+              sourceDatasetId: "data__processed__beta",
+            },
+            {
+              ...base.records[1],
+              id: "data__processed__beta:png",
+              name: "beta.png",
+              kind: "PNG",
+              sourceDatasetId: "data__processed__beta",
+            },
+          ],
+          datasets: [
+            ...base.datasets,
+            {
+              ...base.datasets[0],
+              id: "data__processed__beta",
+              displayName: "beta.csv",
+              path: "data/processed/beta.csv",
+              associatedPlotId: "data__processed__beta:svg",
+              associatedPlotIds: ["data__processed__beta:svg", "data__processed__beta:png"],
+            },
+          ],
+        })}
+      />,
+    );
     fireEvent.click(screen.getByLabelText("Show alpha.csv"));
+    fireEvent.click(screen.getByLabelText("Show beta.csv"));
 
-    const card = screen.getByRole("img", { name: "alpha.svg" }).closest("article");
-    expect(card).not.toBeNull();
-    const resizeHandle = (card as HTMLElement).querySelector(".mg-card-resize") as HTMLElement;
+    const alphaCard = screen.getByRole("img", { name: "alpha.svg" }).closest("article");
+    const betaCard = screen.getByRole("img", { name: "beta.svg" }).closest("article");
+    expect(alphaCard).not.toBeNull();
+    expect(betaCard).not.toBeNull();
+    const resizeHandle = (alphaCard as HTMLElement).querySelector(".mg-card-resize") as HTMLElement;
     expect(resizeHandle).not.toBeNull();
 
     fireEvent.pointerDown(resizeHandle, { clientX: 100, clientY: 100, pointerId: 1 });
     fireEvent.pointerMove(window, { clientX: 320, clientY: 320 });
     fireEvent.pointerUp(window);
 
-    expect(card as HTMLElement).toHaveStyle("--card-size: 450px");
+    expect(alphaCard as HTMLElement).toHaveStyle("--card-size: 450px");
+    expect(betaCard as HTMLElement).toHaveStyle("--card-size: 450px");
 
     fireEvent.change(screen.getByLabelText("Tile size"), { target: { value: "460" } });
-    expect(card as HTMLElement).toHaveStyle("--card-size: 900px");
+    expect(alphaCard as HTMLElement).toHaveStyle("--card-size: 460px");
+    expect(betaCard as HTMLElement).toHaveStyle("--card-size: 460px");
   });
 
   it("shows YAML metadata and content in the YAML tab", () => {
-    render(<App payload={payload()} />);
+    renderApp(payload());
 
     fireEvent.click(screen.getByLabelText("Show alpha.csv"));
-    fireEvent.click(screen.getByRole("tab", { name: "YAML" }));
-
-    expect(screen.getByText("alpha.mpl.yaml")).toBeInTheDocument();
-    expect(screen.getByText("Full editor")).toBeInTheDocument();
-    expect(screen.getByLabelText("YAML text for alpha.mpl.yaml")).toHaveValue("kind: line\nx: time\nseries:\n  - y: signal");
-    expect(screen.getByLabelText("Editable YAML metadata for alpha.mpl.yaml")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("time")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("YAML text for alpha.mpl.yaml"), {
-      target: { value: "kind: scatter\nx: time\nseries:\n  - y: signal" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save YAML" }));
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "save_yaml_attachment",
-        plot_id: "plots__alpha",
-        attachment_path: "results/final/figures/alpha.mpl.yaml",
-        yaml_text: "kind: scatter\nx: time\nseries:\n  - y: signal\n",
-      }),
-    });
-
-    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Updated title" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save fields" }));
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "save_redraw_metadata",
-        plot_id: "plots__alpha",
-        redraw: expect.objectContaining({
-          title: "Updated title",
-          x: "time",
-        }),
-      }),
-    });
+    expect(screen.queryByRole("tab", { name: "YAML" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByText("alpha.mpl.yaml")).not.toBeInTheDocument();
   });
 
-  it("opens draft preferences from the unified card only when no companion figure exists", () => {
+  it("keeps plot generation actions hidden in the read-only host", () => {
     const noPlotPayload = payload({
       datasets: [
         {
@@ -527,20 +607,10 @@ describe("App explorer", () => {
       ],
       plotSets: undefined,
     });
-    render(<App payload={noPlotPayload} />);
+    renderApp(noPlotPayload);
 
     fireEvent.click(screen.getByLabelText("Show alpha.csv"));
-    fireEvent.click(screen.getByRole("button", { name: "Generate plot" }));
-
-    expect(screen.getByRole("dialog", { name: /Draft plot preferences/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Generate companion" }));
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "draft_dataset_with_preferences",
-        dataset_id: "data__processed__alpha",
-        output_format: "svg",
-      }),
-    });
+    expect(screen.queryByRole("button", { name: "Generate plot" })).not.toBeInTheDocument();
   });
 
   it("can switch the same unified card between image and CSV tabs", () => {
@@ -653,23 +723,79 @@ describe("App explorer", () => {
     expect(within(filesPane()).queryByLabelText("Attachments for overview")).not.toBeInTheDocument();
     expect(within(filesPane()).queryByRole("button", { name: "CSV" })).not.toBeInTheDocument();
     expect(within(filesPane()).queryByRole("button", { name: "YAML" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("Show overview"));
+    expect(within(filesPane()).getByText("overview.png")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Show overview.png"));
     expect(screen.getByRole("img", { name: "overview.png" })).toBeInTheDocument();
     expect(screen.queryByText("1200 x 800px")).not.toBeInTheDocument();
     expect(screen.queryByText("150 KiB")).not.toBeInTheDocument();
     expect(screen.queryByText("view only")).not.toBeInTheDocument();
   });
 
-  it("uses Edit as the plot card modal action", () => {
+  it("shows only image-backed files in picture mode", () => {
+    const base = payload();
+    render(
+      <App
+        payload={payload({
+          browseMode: "image-library",
+          plotSets: [
+            {
+              ...base.plotSets![0],
+              plotSetId: "csv-only",
+              title: "table.csv",
+              attachments: [
+                {
+                  id: "csv-only:csv",
+                  type: "csv",
+                  displayName: "table.csv",
+                  sourcePath: "data/table.csv",
+                  datasetId: "data__processed__alpha",
+                  plotId: null,
+                },
+              ],
+              preferredFigure: null,
+            },
+            {
+              plotSetId: "plotset::exports::overview",
+              title: "overview",
+              folderPath: "exports",
+              attachments: [
+                {
+                  id: "exports__overview",
+                  type: "png",
+                  displayName: "overview.png",
+                  sourcePath: "exports/overview.png",
+                  datasetId: null,
+                  plotId: "exports__overview",
+                },
+              ],
+              preferredFigure: {
+                id: "exports__overview",
+                type: "png",
+                displayName: "overview.png",
+                sourcePath: "exports/overview.png",
+                datasetId: null,
+                plotId: "exports__overview",
+              },
+              editable: false,
+              checked: false,
+              renderStatus: "ready",
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(within(filesPane()).getByText("overview.png")).toBeInTheDocument();
+    expect(within(filesPane()).queryByText("table.csv")).not.toBeInTheDocument();
+  });
+
+  it("does not surface plot editing actions in the read-only host", () => {
     render(<App payload={payload()} />);
     fireEvent.click(screen.getByLabelText("Show alpha.csv"));
 
     expect(screen.queryByRole("button", { name: "Details" })).not.toBeInTheDocument();
-    const editButton = screen.getByRole("button", { name: "Edit" });
-    fireEvent.click(editButton);
-
-    expect(screen.getByRole("dialog", { name: /Plot look for alpha.svg/ })).toBeInTheDocument();
-    expect(screen.getByText("Edit plot")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Plot look for alpha.svg/ })).not.toBeInTheDocument();
   });
 
   it("uses the right-side checkbox to keep a plot set in the gallery", () => {
@@ -684,6 +810,7 @@ describe("App explorer", () => {
   it("selects and clears all visible plot sets from the files pane", () => {
     render(
       <App
+        host={host}
         payload={payload({
           plotSets: [
             payload().plotSets![0],
@@ -701,16 +828,32 @@ describe("App explorer", () => {
     expect(screen.getByLabelText("Show alpha.csv")).toBeChecked();
     expect(screen.getByLabelText("Show beta.csv")).toBeChecked();
     expect(screen.getByText("2 selected in folder")).toBeInTheDocument();
-    expect(streamlitMock.setComponentValue).toHaveBeenLastCalledWith({
-      event: expect.objectContaining({
-        type: "set_checked_plot_sets",
-        plot_set_ids: ["data__processed__alpha", "data__processed__beta"],
-      }),
-    });
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "set_checked_plot_sets",
+      plot_set_ids: ["data__processed__alpha", "data__processed__beta"],
+    }));
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Clear all plot sets in folder" }));
     expect(screen.getByLabelText("Show alpha.csv")).not.toBeChecked();
     expect(screen.getByLabelText("Show beta.csv")).not.toBeChecked();
+  });
+
+  it("clears the gallery from the workspace toolbar", () => {
+    renderApp(payload());
+
+    fireEvent.click(screen.getByLabelText("Show alpha.csv"));
+    expect(screen.getByRole("img", { name: "alpha.svg" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear gallery" }));
+
+    expect(screen.getByLabelText("Show alpha.csv")).not.toBeChecked();
+    expect(screen.queryByRole("img", { name: "alpha.svg" })).not.toBeInTheDocument();
+    expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: expect.any(String),
+      type: "set_checked_plot_sets",
+      plot_set_ids: [],
+    }));
   });
 
   it("alternates file-row shade classes for easier scanning", () => {

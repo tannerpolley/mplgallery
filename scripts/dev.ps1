@@ -5,6 +5,10 @@ param(
         "sync",
         "serve",
         "serve-examples",
+        "preview-url",
+        "preview-url-examples",
+        "desktop",
+        "desktop-examples",
         "scan",
         "test",
         "lint",
@@ -64,15 +68,20 @@ Usage:
 
 Core actions:
   sync             uv sync --dev
-  serve            uv run mplgallery serve <project> --port <port> (headless, no browser tab)
-  serve-examples   uv run mplgallery serve examples --port <port> (headless, no browser tab)
+  serve            uv run mplgallery serve <project> (static browser preview)
+  serve-examples   uv run mplgallery serve examples (static browser preview)
+  preview-url      uv run mplgallery preview-url <project> (prints localhost preview URL)
+  preview-url-examples
+                   uv run mplgallery preview-url examples (prints localhost preview URL)
+  desktop          uv run mplgallery desktop <project>
+  desktop-examples uv run mplgallery desktop examples
   scan             uv run mplgallery scan <project>
   test             uv run pytest
   lint             uv run ruff check .
   check            test + lint
 
 Frontend actions:
-  frontend-install npm install in the Streamlit component folder
+  frontend-install npm install in the React frontend folder
   frontend-test    npm run test
   frontend-build   npm run build
 
@@ -82,7 +91,7 @@ Packaging actions:
 
 Examples:
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 sync
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 serve examples -Port 8507
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 desktop examples
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 scan examples\sample_project
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 check
 "@
@@ -96,10 +105,22 @@ switch ($Action) {
         Invoke-Repo @("uv", "sync", "--dev")
     }
     "serve" {
-        Invoke-Repo @("uv", "run", "mplgallery", "serve", $Project, "--port", "$Port")
+        Invoke-Repo @("uv", "run", "mplgallery", "serve", $Project)
     }
     "serve-examples" {
-        Invoke-Repo @("uv", "run", "mplgallery", "serve", "examples", "--port", "$Port")
+        Invoke-Repo @("uv", "run", "mplgallery", "serve", "examples")
+    }
+    "preview-url" {
+        Invoke-Repo @("uv", "run", "mplgallery", "preview-url", $Project)
+    }
+    "preview-url-examples" {
+        Invoke-Repo @("uv", "run", "mplgallery", "preview-url", "examples")
+    }
+    "desktop" {
+        Invoke-Repo @("uv", "run", "mplgallery", "desktop", $Project)
+    }
+    "desktop-examples" {
+        Invoke-Repo @("uv", "run", "mplgallery", "desktop", "examples")
     }
     "scan" {
         Invoke-Repo @("uv", "run", "mplgallery", "scan", $Project)

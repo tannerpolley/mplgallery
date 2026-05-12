@@ -4,15 +4,13 @@
   <img src="src/mplgallery/assets/mplgallery-icon.png" alt="MPLGallery app icon" width="96" align="right">
 </p>
 
-MPLGallery is a local Windows and Python app for browsing Matplotlib plot
-outputs inside analysis projects. It treats a plot as a small folder of related
-files: CSV snapshots, PNG/SVG/PDF figures, `.mpl.yaml` style metadata, and
-optional provenance files.
+MPLGallery is a local Windows desktop app for browsing analysis outputs inside
+project folders. It treats a plot as a small folder of related files: CSV
+snapshots, PNG/SVG/PDF figures, and optional provenance files.
 
 It is meant for scientists, engineers, and Python users who already generate
-figures with scripts and want a cleaner way to inspect, compare, select, and
-lightly edit plot appearance without turning their analysis code into a web
-application.
+figures with scripts and want a cleaner way to inspect, compare, and select
+results without turning their analysis code into a web application.
 
 ## Screenshots
 
@@ -21,27 +19,23 @@ gallery view:
 
 ![MPLGallery showing selected plot sets with real Matplotlib output](docs/assets/readme/mplgallery-gallery-overview.png)
 
-Open a plot-set sidecar to inspect the YAML-backed metadata that connects a
-figure, its data snapshot, and editable Matplotlib settings:
+Inspect the file relationships inside a plot set without leaving the gallery:
 
-![MPLGallery showing YAML metadata for an editable plot set](docs/assets/readme/mplgallery-yaml-metadata.png)
+![MPLGallery showing plot-set file relationships and metadata](docs/assets/readme/mplgallery-yaml-metadata.png)
 
-Use the maximized plot view to inspect a figure and adjust plot appearance
-metadata such as title, labels, scales, figure settings, and series style:
+Use the larger card view to inspect a figure and its related assets in more
+detail:
 
-![MPLGallery maximized plot editor with axes controls](docs/assets/readme/mplgallery-style-editor.png)
+![MPLGallery enlarged figure inspection view](docs/assets/readme/mplgallery-style-editor.png)
 
 ## What It Does
 
 - Opens a project folder and discovers plot sets under `results/**`.
 - Shows folders and plot files in an IDE-style explorer.
-- Groups each figure with its CSV snapshots, images, and `.mpl.yaml` sidecar.
+- Groups each figure with its CSV snapshots and image assets.
 - Switches to an image-library mode for loose PNG/SVG folders that do not have
   CSV files or `results/<plot_set>/` organization.
-- Previews CSV-backed Matplotlib plots and existing PNG/SVG references.
-- Lets you edit appearance metadata such as labels, limits, colors, markers,
-  line styles, figure size, grid, and legend settings.
-- Persists metadata edits to `.mpl.yaml` files when a plot set is editable.
+- Previews CSV summaries and existing PNG/SVG references.
 - Provides a packaged Windows desktop app with Start Menu shortcuts, an app
   icon, and update prompts.
 
@@ -49,8 +43,8 @@ metadata such as title, labels, scales, figure settings, and series style:
 
 MPLGallery does not fit models, tune parameters, run arbitrary computation, or
 change source CSV data. Your project scripts remain responsible for generating
-scientific results and final figures. MPLGallery is the local review and
-appearance-management layer around those outputs.
+scientific results and final figures. MPLGallery is the local review layer
+around those outputs.
 
 ## Who It Is For
 
@@ -140,29 +134,22 @@ Install from GitHub:
 pip install git+https://github.com/tannerpolley/mplgallery.git
 ```
 
-Run from a project root:
+Run a project scan from a project root:
 
 ```bash
-mplgallery run .
+mplgallery scan .
 ```
 
-Start from a folder chooser:
+Launch the packaged or locally built Tauri desktop app:
 
 ```bash
-mplgallery run --choose-root
-```
-
-Open in a native Windows desktop window from a Python environment:
-
-```bash
-pip install "mplgallery[desktop]"
 mplgallery desktop .
 ```
 
-Use browser mode when you want normal web tooling or automation:
+Open the static browser preview when you want a host-free UI shell for layout
+or automation work:
 
 ```bash
-mplgallery run .
 mplgallery serve .
 mplgallery desktop . --browser
 ```
@@ -171,7 +158,6 @@ Use image-library mode for folders that are just PNG/SVG exports, screenshots,
 or reference figures:
 
 ```bash
-mplgallery run /path/to/image/folder --image-library
 mplgallery desktop /path/to/image/folder --image-library
 ```
 
@@ -187,54 +173,8 @@ available.
 2. Open the project root in MPLGallery.
 3. Select plot sets in the file pane.
 4. Review the generated figures and CSV snapshots.
-5. Edit appearance metadata when a `.mpl.yaml` sidecar is available.
-6. Rerun your project render script when you want final publication artifacts.
-
-MPLGallery can only run render commands that are explicitly declared in the
-`.mpl.yaml` sidecar. It does not infer and run arbitrary Python scripts.
-
-## `.mpl.yaml` Sidecars
-
-Matplotlib does not read `.mpl.yaml` by itself. Your render script should load
-the sidecar and apply the settings before saving the figure.
-
-Example:
-
-```yaml
-version: 1
-plot_id: response_curve
-title: Response curve
-files:
-  figures:
-    - response_curve.svg
-    - response_curve.png
-  data:
-    - response_curve.csv
-render:
-  command: uv run python scripts/render_figures.py --plot response_curve
-matplotlib:
-  kind: line
-  x: time_s
-  title: Response curve
-  xlabel: Time
-  xlabel_unit: "$\\mathrm{s}$"
-  ylabel: Response
-  grid: true
-  legend_location: best
-  figure:
-    width_inches: 6
-    height_inches: 4
-    dpi: 150
-  series:
-    - y: response
-      label: Model
-      color: "#1f77b4"
-      linestyle: "-"
-      marker: "o"
-```
-
-Editable plot sets are the ones with enough metadata for MPLGallery to connect
-the visible figure, plotted CSV data, and Matplotlib style settings.
+5. Switch to Pictures mode when you want loose PNG/SVG browsing.
+6. Rerun your project scripts when you want updated publication artifacts.
 
 ## Command Line Tools
 
@@ -282,7 +222,7 @@ mplgallery import-manifest docs/plots/manifest.json --format epcsaft --project-r
 Run the bundled examples:
 
 ```bash
-uv run mplgallery run examples
+uv run mplgallery desktop examples
 ```
 
 Useful fixtures:
@@ -311,7 +251,7 @@ uv run python -m build
 Build the Windows desktop app and setup executable from Windows:
 
 ```bash
-uv sync --extra desktop --group windows-dist
+uv sync --group windows-dist
 uv run python scripts/build_windows_dist.py
 ```
 
@@ -324,8 +264,8 @@ dist/windows/mplgallery-desktop-<version>-windows-<arch>.zip
 dist/windows/mplgallery-desktop-build.json
 ```
 
-The build script verifies the generated EXE with a self-test and a smoke test
-before writing the build report.
+The build script writes the Tauri executable, setup bundle, ZIP release asset,
+and build report.
 
 ## Release Assets
 
@@ -347,7 +287,6 @@ installer helper files needed for in-app updates.
 - `.mplgallery/cache` is app cache, not project output.
 - Existing PNG/SVG/PDF files can be browsed as references.
 - Static gallery browsing is read-only.
-- Metadata edits are written to `.mpl.yaml` sidecars.
 - Future overwrite actions should create backups first.
 
 ## More Project Notes

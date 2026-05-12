@@ -14,7 +14,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-    throw "npm is required for the Streamlit frontend component. Install Node.js/npm, then rerun setup."
+    throw "npm is required for the React frontend component. Install Node.js/npm, then rerun setup."
 }
 
 uv sync --dev
@@ -22,7 +22,13 @@ npm --prefix src/mplgallery/ui/frontend install
 '''
 
 [[actions]]
-name = "Open Streamlit App"
+name = "Open Desktop App"
 icon = "run"
-command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 serve-examples -Port 8507"
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 desktop-examples"
+platform = "win32"
+
+[[actions]]
+name = "Open Browser Preview"
+icon = "run"
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 preview-url-examples"
 platform = "win32"

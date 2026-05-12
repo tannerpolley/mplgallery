@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
-import webbrowser
 from pathlib import Path
 
 import typer
@@ -16,7 +13,7 @@ from mplgallery.core.studio import (
     import_artifact_references,
     init_csv_root,
 )
-from mplgallery.desktop import launch_desktop_app
+from mplgallery.desktop import launch_browser_preview, launch_desktop_app, prepare_browser_preview
 
 app = typer.Typer(help="Browse and manage Matplotlib-generated plot galleries.")
 
@@ -280,31 +277,28 @@ def validate(project_root: Path = typer.Argument(Path("."), help="Project direct
 @app.command()
 def serve(
     project_root: Path = typer.Argument(Path("."), help="Project directory to serve."),
-    port: int | None = typer.Option(None, help="Streamlit server port."),
     choose_root: bool = typer.Option(
         False,
         "--choose-root",
-        help="Open with the root chooser emphasized and use the last recent root when available.",
+        help="Reserved for parity with the desktop launcher.",
     ),
     include_artifacts: bool = typer.Option(
         True,
         "--include-artifacts/--csv-only",
-        help="Show PNG/SVG artifacts alongside draftable CSV files.",
+        help="Reserved for parity with the desktop launcher.",
     ),
     image_library: bool = typer.Option(
         False,
         "--image-library",
-        help="Browse only PNG/SVG image files and do not require plot-set or CSV layout.",
+        help="Reserved for parity with the desktop launcher.",
     ),
 ) -> None:
-    """Launch the local Streamlit CSV plot studio."""
+    """Open the static React browser preview."""
     raise typer.Exit(
-        _run_streamlit_app(
-            project_root,
-            port=port,
+        launch_browser_preview(
+            project_root.expanduser().resolve(),
             include_artifacts=include_artifacts,
             image_library=image_library,
-            choose_root=choose_root,
         )
     )
 
@@ -312,31 +306,52 @@ def serve(
 @app.command("run")
 def run_app(
     project_root: Path = typer.Argument(Path("."), help="Project directory to run from."),
-    port: int | None = typer.Option(None, help="Streamlit server port."),
     choose_root: bool = typer.Option(
         False,
         "--choose-root",
-        help="Open with the root chooser emphasized and use the last recent root when available.",
+        help="Reserved for parity with the desktop launcher.",
     ),
     include_artifacts: bool = typer.Option(
         True,
         "--include-artifacts/--csv-only",
-        help="Show PNG/SVG artifacts alongside draftable CSV files.",
+        help="Reserved for parity with the desktop launcher.",
     ),
     image_library: bool = typer.Option(
         False,
         "--image-library",
-        help="Browse only PNG/SVG image files and do not require plot-set or CSV layout.",
+        help="Reserved for parity with the desktop launcher.",
     ),
 ) -> None:
-    """Launch the local Streamlit CSV plot studio."""
+    """Open the static React browser preview."""
     raise typer.Exit(
-        _run_streamlit_app(
-            project_root,
-            port=port,
+        launch_browser_preview(
+            project_root.expanduser().resolve(),
             include_artifacts=include_artifacts,
             image_library=image_library,
-            choose_root=choose_root,
+        )
+    )
+
+
+@app.command("preview-url")
+def preview_url(
+    project_root: Path = typer.Argument(Path("."), help="Project directory to preview."),
+    include_artifacts: bool = typer.Option(
+        True,
+        "--include-artifacts/--csv-only",
+        help="Show PNG/SVG artifacts alongside CSV summary records.",
+    ),
+    image_library: bool = typer.Option(
+        False,
+        "--image-library",
+        help="Browse only PNG/SVG image files and do not require plot-set layout.",
+    ),
+) -> None:
+    """Start the browser preview server and print its localhost URL."""
+    typer.echo(
+        prepare_browser_preview(
+            project_root.expanduser().resolve(),
+            include_artifacts=include_artifacts,
+            image_library=image_library,
         )
     )
 
@@ -344,47 +359,42 @@ def run_app(
 @app.command()
 def desktop(
     project_root: Path | None = typer.Argument(None, help="Project directory to open."),
-    port: int | None = typer.Option(None, help="Preferred local port."),
     choose_root: bool = typer.Option(
         False,
         "--choose-root",
-        help="Open with the root chooser emphasized and use the last recent root when available.",
+        help="Start with the desktop project picker emphasized when supported.",
     ),
     include_artifacts: bool = typer.Option(
         True,
         "--include-artifacts/--csv-only",
-        help="Show PNG/SVG artifacts alongside draftable CSV files.",
+        help="Show PNG/SVG artifacts alongside CSV summary records.",
     ),
     image_library: bool = typer.Option(
         False,
         "--image-library",
-        help="Browse only PNG/SVG image files and do not require plot-set or CSV layout.",
+        help="Browse only PNG/SVG image files and do not require plot-set layout.",
     ),
     browser: bool = typer.Option(
         False,
         "--browser",
-        help="Open the hosted app in the system browser instead of a native desktop window.",
+        help="Open the static browser preview instead of the Tauri desktop app.",
     ),
     width: int = typer.Option(1600, help="Initial native window width."),
     height: int = typer.Option(1000, help="Initial native window height."),
 ) -> None:
-    """Launch MPLGallery as a native desktop window on Windows."""
+    """Launch MPLGallery as a Tauri desktop app."""
     resolved_root = project_root.expanduser().resolve() if project_root is not None else None
     if browser:
         raise typer.Exit(
-            _run_streamlit_app(
+            launch_browser_preview(
                 resolved_root,
-                port=port,
                 include_artifacts=include_artifacts,
                 image_library=image_library,
-                choose_root=choose_root,
-                open_browser=True,
             )
         )
     try:
         return_code = launch_desktop_app(
             resolved_root,
-            port=port,
             choose_root=choose_root,
             include_artifacts=include_artifacts,
             image_library=image_library,
@@ -395,44 +405,6 @@ def desktop(
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
     raise typer.Exit(return_code)
-
-
-def _run_streamlit_app(
-    project_root: Path | None,
-    *,
-    port: int | None,
-    include_artifacts: bool,
-    image_library: bool,
-    choose_root: bool,
-    open_browser: bool = False,
-) -> int:
-    chosen_port = 8501 if open_browser and port is None else port
-    app_path = Path(__file__).parent / "ui" / "app.py"
-    command = [
-        sys.executable,
-        "-m",
-        "streamlit",
-        "run",
-        str(app_path),
-        "--server.headless=true",
-        "--browser.gatherUsageStats=false",
-    ]
-    if chosen_port is not None:
-        command.append(f"--server.port={chosen_port}")
-    command.append("--")
-    if project_root is None:
-        command.append("--blank-start")
-    else:
-        command.extend(["--project-root", str(project_root.expanduser().resolve())])
-    if choose_root:
-        command.append("--choose-root")
-    if include_artifacts:
-        command.append("--include-artifacts")
-    if image_library:
-        command.append("--image-library")
-    if open_browser:
-        webbrowser.open(f"http://127.0.0.1:{chosen_port}")
-    return subprocess.run(command, check=False).returncode
 
 
 def main() -> None:

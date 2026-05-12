@@ -4,101 +4,141 @@ import json
 from pathlib import Path
 
 import mplgallery.desktop as desktop
-from mplgallery.updater import UpdateCheckResult
 
 
-def test_streamlit_command_uses_python_module_in_dev_mode(tmp_path: Path) -> None:
-    command = desktop._streamlit_command(
-        project_root=tmp_path,
-        port=8615,
-        choose_root=True,
-        include_artifacts=True,
-        image_library=True,
-    )
+def test_tauri_command_prefers_cargo_for_repo_runs(monkeypatch, tmp_path: Path) -> None:
+    packaged = tmp_path / "dist" / "windows" / "mplgallery-desktop.exe"
+    packaged.parent.mkdir(parents=True, exist_ok=True)
+    packaged.write_bytes(b"exe")
 
-    assert command[:3] == [desktop.sys.executable, "-m", "streamlit"]
-    assert "--server.port=8615" in command
-    assert "--choose-root" in command
-    assert "--include-artifacts" in command
-    assert "--image-library" in command
+    monkeypatch.setattr(desktop, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(desktop, "TAURI_ROOT", tmp_path / "src-tauri")
+    monkeypatch.setattr(desktop.shutil, "which", lambda name: "C:/Rust/bin/cargo.exe" if name == "cargo" else None)
 
+    command = desktop._tauri_command()
 
-def test_streamlit_command_uses_internal_mode_when_frozen(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(desktop.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(desktop.sys, "executable", "C:/dist/mplgallery-desktop.exe")
-
-    command = desktop._streamlit_command(
-        project_root=tmp_path,
-        port=8616,
-        choose_root=False,
-        include_artifacts=False,
-        image_library=False,
-    )
-
-    assert command[0] == "C:/dist/mplgallery-desktop.exe"
-    assert "--internal-streamlit" in command
-    assert "--port=8616" in command
+    assert command == [
+        "C:/Rust/bin/cargo.exe",
+        "run",
+        "--manifest-path",
+        str((tmp_path / "src-tauri" / "Cargo.toml")),
+    ]
 
 
-def test_write_self_test_records_runtime_details(tmp_path: Path, monkeypatch) -> None:
+def test_tauri_command_falls_back_to_packaged_executable_without_cargo(monkeypatch, tmp_path: Path) -> None:
+    packaged = tmp_path / "dist" / "windows" / "mplgallery-desktop.exe"
+    packaged.parent.mkdir(parents=True, exist_ok=True)
+    packaged.write_bytes(b"exe")
+
+    monkeypatch.setattr(desktop, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(desktop, "TAURI_ROOT", tmp_path / "src-tauri")
+    monkeypatch.setattr(desktop.shutil, "which", lambda name: None)
+
+    command = desktop._tauri_command()
+
+    assert command == [str(packaged)]
+
+
+def test_preview_html_path_requires_built_frontend(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(desktop, "FRONTEND_DIST_ROOT", tmp_path / "dist")
+
+    try:
+        desktop._preview_html_path()
+    except RuntimeError as exc:
+        assert "npm --prefix src/mplgallery/ui/frontend run build" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("expected browser preview lookup to fail without built assets")
+
+
+def test_write_self_test_records_tauri_launcher(tmp_path: Path, monkeypatch) -> None:
     output = tmp_path / "self-test.json"
-    monkeypatch.setattr(desktop.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(desktop.sys, "executable", "C:/dist/mplgallery-desktop.exe")
-    monkeypatch.setattr(desktop.sys, "_MEIPASS", "C:/bundle", raising=False)
+    preview_root = tmp_path / "frontend-dist"
+    preview_root.mkdir(parents=True, exist_ok=True)
+    (preview_root / "index.html").write_text("<html></html>", encoding="utf-8")
+
+    monkeypatch.setattr(desktop, "FRONTEND_DIST_ROOT", preview_root)
+    monkeypatch.setattr(desktop, "_tauri_command", lambda: ["C:/dist/mplgallery-desktop.exe"])
 
     desktop._write_self_test(output)
 
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["ok"] is True
-    assert payload["frozen"] is True
-    assert payload["executable"] == "C:/dist/mplgallery-desktop.exe"
+    assert payload["version"] == desktop.APP_VERSION
     assert payload["app_id"] == desktop.APP_USER_MODEL_ID
-    assert payload["app_path"].endswith("mplgallery\\ui\\app.py") or payload["app_path"].endswith("mplgallery/ui/app.py")
+    assert payload["launcher_command"] == ["C:/dist/mplgallery-desktop.exe"]
+    assert payload["preview_html"].endswith("index.html")
 
 
-def test_streamlit_env_disables_development_mode(monkeypatch) -> None:
-    monkeypatch.delenv("BROWSER", raising=False)
-    monkeypatch.delenv("STREAMLIT_GLOBAL_DEVELOPMENT_MODE", raising=False)
-
-    env = desktop._streamlit_env()
-
-    assert env["BROWSER"] == "none"
-    assert env["STREAMLIT_GLOBAL_DEVELOPMENT_MODE"] == "false"
-
-
-def test_update_check_payload_uses_packaged_app_metadata(monkeypatch) -> None:
+def test_browser_preview_html_injects_real_payload(tmp_path: Path, monkeypatch) -> None:
+    frontend_dist = tmp_path / "frontend-dist"
+    frontend_dist.mkdir(parents=True, exist_ok=True)
+    (frontend_dist / "index.html").write_text(
+        '<!doctype html><html><head><script type="module" src="./assets/index.js"></script></head><body></body></html>',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(desktop, "FRONTEND_DIST_ROOT", frontend_dist)
+    monkeypatch.setattr(desktop, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(
         desktop,
-        "check_for_updates",
-        lambda **_: UpdateCheckResult(checked=True, available=False),
+        "_browser_preview_payload",
+        lambda project_root, include_artifacts, image_library: {"projectRoot": str(project_root), "records": []},
     )
-    monkeypatch.setattr(desktop.os, "name", "nt")
-    monkeypatch.setattr(desktop.sys, "frozen", True, raising=False)
 
-    payload = desktop._desktop_update_payload()
+    result = desktop._browser_preview_html_path(
+        project_root=tmp_path / "examples",
+        include_artifacts=True,
+        image_library=False,
+    )
 
-    assert payload["appId"] == desktop.APP_USER_MODEL_ID
-    assert payload["version"] == desktop.APP_VERSION
-    assert payload["canInstallUpdates"] is True
-    assert payload["update"]["checked"] is True
-
-
-def test_update_check_payload_skips_network_for_dev_mode(monkeypatch) -> None:
-    def fail_check(**_: object) -> UpdateCheckResult:
-        raise AssertionError("dev mode should not check GitHub during startup")
-
-    monkeypatch.setattr(desktop, "check_for_updates", fail_check)
-    monkeypatch.setattr(desktop.os, "name", "nt")
-    monkeypatch.delattr(desktop.sys, "frozen", raising=False)
-
-    payload = desktop._desktop_update_payload()
-
-    assert payload["canInstallUpdates"] is False
-    assert payload["update"]["checked"] is False
+    html = result.read_text(encoding="utf-8")
+    assert result.name == "browser-preview.html"
+    assert "window.__MPLGALLERY_BROWSER_PAYLOAD__" in html
+    assert '"projectRoot":"' in html
 
 
-def test_loading_html_is_branded_startup_shell() -> None:
-    html = desktop._loading_html()
+def test_launch_browser_preview_opens_localhost_url(tmp_path: Path, monkeypatch) -> None:
+    frontend_dist = tmp_path / "frontend-dist"
+    frontend_dist.mkdir(parents=True, exist_ok=True)
+    preview = frontend_dist / "browser-preview.html"
+    preview.write_text("<html></html>", encoding="utf-8")
 
-    assert "Opening MPLGallery" in html
-    assert "Starting the local plotting workspace" in html
+    monkeypatch.setattr(
+        desktop,
+        "_browser_preview_html_path",
+        lambda project_root, include_artifacts, image_library: preview,
+    )
+
+    opened_urls: list[str] = []
+    monkeypatch.setattr(desktop.webbrowser, "open", opened_urls.append)
+    monkeypatch.setattr(
+        desktop,
+        "_start_browser_preview_server",
+        lambda preview_root, preview_name: f"http://127.0.0.1:9988/{preview_name}",
+    )
+
+    result = desktop.launch_browser_preview(tmp_path / "examples")
+
+    assert result == 0
+    assert opened_urls == ["http://127.0.0.1:9988/browser-preview.html"]
+
+
+def test_prepare_browser_preview_returns_localhost_url(tmp_path: Path, monkeypatch) -> None:
+    frontend_dist = tmp_path / "frontend-dist"
+    frontend_dist.mkdir(parents=True, exist_ok=True)
+    preview = frontend_dist / "browser-preview.html"
+    preview.write_text("<html></html>", encoding="utf-8")
+
+    monkeypatch.setattr(
+        desktop,
+        "_browser_preview_html_path",
+        lambda project_root, include_artifacts, image_library: preview,
+    )
+    monkeypatch.setattr(
+        desktop,
+        "_start_browser_preview_server",
+        lambda preview_root, preview_name: f"http://127.0.0.1:8765/{preview_name}",
+    )
+
+    result = desktop.prepare_browser_preview(tmp_path / "examples")
+
+    assert result == "http://127.0.0.1:8765/browser-preview.html"

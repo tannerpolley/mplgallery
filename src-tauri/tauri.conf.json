@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MPLGallery",
+  "version": "0.1.0",
+  "identifier": "com.mplgallery.desktop",
+  "build": {
+    "beforeDevCommand": "npm --prefix ../src/mplgallery/ui/frontend run dev -- --host 127.0.0.1 --port 1420",
+    "devUrl": "http://127.0.0.1:1420/tauri.html",
+    "beforeBuildCommand": "npm --prefix ../src/mplgallery/ui/frontend run build",
+    "frontendDist": "../src/mplgallery/ui/frontend/dist"
+  },
+  "app": {
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    },
+    "windows": [
+      {
+        "title": "MPLGallery",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 1100,
+        "minHeight": 760,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": false
+  }
+}

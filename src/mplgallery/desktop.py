@@ -3,27 +3,29 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
+import webbrowser
 from pathlib import Path
 
 from mplgallery import __version__
-from mplgallery.updater import UpdateCheckResult, check_for_updates
 
 
 APP_NAME = "MPLGallery"
 APP_VERSION = __version__
 APP_USER_MODEL_ID = "Tanner.MPLGallery"
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+TAURI_ROOT = REPO_ROOT / "src-tauri"
+FRONTEND_DIST_ROOT = REPO_ROOT / "src" / "mplgallery" / "ui" / "frontend" / "dist"
+
 
 def launch_desktop_app(
     project_root: Path | None = None,
     *,
-    port: int | None = None,
     choose_root: bool = False,
     include_artifacts: bool = True,
     image_library: bool = False,
@@ -31,465 +33,300 @@ def launch_desktop_app(
     height: int = 1000,
     title: str = APP_NAME,
 ) -> int:
-    try:
-        import webview
-    except ImportError as exc:  # pragma: no cover - dependency guidance path
-        raise RuntimeError(
-            "Desktop mode requires the optional 'desktop' dependency. "
-            "Install with: uv sync --extra desktop"
-        ) from exc
-
-    resolved_root = project_root.expanduser().resolve() if project_root is not None else None
-    server_port = port or _find_free_port()
-    server_process = _start_streamlit_server(
-        resolved_root,
-        port=server_port,
+    command = _tauri_command()
+    env = _tauri_env(
+        project_root=project_root,
         choose_root=choose_root,
         include_artifacts=include_artifacts,
         image_library=image_library,
+        width=width,
+        height=height,
+        title=title,
     )
-    url = f"http://127.0.0.1:{server_port}"
-    try:
-        window = webview.create_window(
-            title=title,
-            html=_loading_html(),
-            width=width,
-            height=height,
-            min_size=(1100, 720),
-        )
+    return subprocess.run(command, check=False, cwd=REPO_ROOT, env=env).returncode
 
-        def load_when_ready() -> None:
-            try:
-                _wait_for_server(url, server_process)
-                window.load_url(url)
-            except Exception as exc:  # pragma: no cover - native window display path
-                _trace("launch_desktop_app:load_error", {"error": str(exc)})
-                window.load_html(_error_html(str(exc)))
 
-        webview.start(load_when_ready)
-        return 0 if window is not None else 1
-    finally:
-        _stop_process(server_process)
+def launch_browser_preview(
+    project_root: Path | None = None,
+    *,
+    include_artifacts: bool = True,
+    image_library: bool = False,
+) -> int:
+    preview_url = prepare_browser_preview(
+        project_root=project_root,
+        include_artifacts=include_artifacts,
+        image_library=image_library,
+    )
+    webbrowser.open(preview_url)
+    return 0
+
+
+def prepare_browser_preview(
+    project_root: Path | None = None,
+    *,
+    include_artifacts: bool = True,
+    image_library: bool = False,
+) -> str:
+    preview_path = _browser_preview_html_path(
+        project_root=project_root,
+        include_artifacts=include_artifacts,
+        image_library=image_library,
+    )
+    return _start_browser_preview_server(preview_path.parent, preview_path.name)
 
 
 def gui_main() -> None:
-    _trace("gui_main:start")
     parser = argparse.ArgumentParser(prog="mplgallery-desktop")
-    parser.add_argument("--internal-streamlit", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--self-test-out", type=Path, default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--smoke-browser-launch", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--blank-start", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("project_root", nargs="?", default=None, help="Project directory to open.")
-    parser.add_argument("--port", type=int, default=None, help="Preferred local port.")
-    parser.add_argument("--choose-root", action="store_true", help="Start with the root chooser emphasized.")
+    parser.add_argument(
+        "--choose-root",
+        action="store_true",
+        help="Start with the project picker emphasized when the desktop host supports it.",
+    )
     parser.add_argument(
         "--include-artifacts",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Show PNG/SVG artifacts alongside draftable CSV files.",
+        help="Show PNG/SVG artifact records alongside CSV summaries.",
     )
     parser.add_argument(
         "--image-library",
         action="store_true",
-        help="Browse only PNG/SVG image files and do not require plot-set or CSV layout.",
+        help="Browse loose PNG/SVG images instead of analysis-linked plot sets.",
     )
-    parser.add_argument("--width", type=int, default=1600, help="Initial window width.")
-    parser.add_argument("--height", type=int, default=1000, help="Initial window height.")
+    parser.add_argument(
+        "--browser",
+        action="store_true",
+        help="Open the static browser preview instead of the Tauri desktop app.",
+    )
+    parser.add_argument("--width", type=int, default=1600, help="Preferred desktop window width.")
+    parser.add_argument("--height", type=int, default=1000, help="Preferred desktop window height.")
     args = parser.parse_args()
-    if args.self_test_out is None:
-        env_self_test_out = os.getenv("MPLGALLERY_DESKTOP_SELF_TEST_OUT")
-        if env_self_test_out:
-            args.self_test_out = Path(env_self_test_out)
-    if not args.smoke_browser_launch and os.getenv("MPLGALLERY_DESKTOP_SMOKE") == "1":
-        args.smoke_browser_launch = True
-    _trace(
-        "gui_main:parsed",
-        {
-            "internal_streamlit": args.internal_streamlit,
-            "self_test_out": str(args.self_test_out) if args.self_test_out else None,
-            "smoke_browser_launch": args.smoke_browser_launch,
-            "project_root": args.project_root,
-        },
-    )
-    project_root = Path(args.project_root) if args.project_root is not None else None
-    if args.internal_streamlit:
-        _trace("gui_main:internal_streamlit")
-        raise SystemExit(
-            _run_internal_streamlit(
-                project_root,
-                port=args.port or 8501,
-                choose_root=args.choose_root,
-                include_artifacts=args.include_artifacts,
-                image_library=args.image_library,
-            )
-        )
-    if args.smoke_browser_launch:
-        _trace("gui_main:smoke")
-        raise SystemExit(
-            _smoke_browser_launch(
-                project_root,
-                port=args.port,
-                choose_root=args.choose_root,
-                include_artifacts=args.include_artifacts,
-                image_library=args.image_library,
-                output_path=args.self_test_out,
-            )
-        )
+
     if args.self_test_out is not None:
-        _trace("gui_main:self_test")
         _write_self_test(args.self_test_out)
         raise SystemExit(0)
-    _trace("gui_main:launch")
-    raise SystemExit(
-        launch_desktop_app(
-            project_root,
-            port=args.port,
-            choose_root=args.choose_root,
-            include_artifacts=args.include_artifacts,
-            image_library=args.image_library,
-            width=args.width,
-            height=args.height,
+
+    project_root = Path(args.project_root).expanduser().resolve() if args.project_root else None
+    try:
+        if args.browser:
+            raise SystemExit(launch_browser_preview())
+        raise SystemExit(
+            launch_desktop_app(
+                project_root,
+                choose_root=args.choose_root,
+                include_artifacts=args.include_artifacts,
+                image_library=args.image_library,
+                width=args.width,
+                height=args.height,
+            )
         )
-    )
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
-def _start_streamlit_server(
-    project_root: Path | None,
-    *,
-    port: int,
-    choose_root: bool,
-    include_artifacts: bool,
-    image_library: bool,
-) -> subprocess.Popen[str]:
-    _trace("start_streamlit_server", {"project_root": str(project_root), "port": port, "frozen": bool(getattr(sys, "frozen", False))})
-    command = _streamlit_command(
-        project_root=project_root,
-        port=port,
-        choose_root=choose_root,
-        include_artifacts=include_artifacts,
-        image_library=image_library,
-    )
-    env = _streamlit_env()
-    return subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        text=True,
-        encoding="utf-8",
-        bufsize=1,
-        env=env,
-    )
-
-
-def _streamlit_command(
-    *,
-    project_root: Path | None,
-    port: int,
-    choose_root: bool,
-    include_artifacts: bool,
-    image_library: bool,
-) -> list[str]:
+def _tauri_command() -> list[str]:
     if getattr(sys, "frozen", False):
-        command = [sys.executable, "--internal-streamlit"]
-        if project_root is not None:
-            command.append(str(project_root))
-        else:
-            command.append("--blank-start")
-        command.append(f"--port={port}")
-        if choose_root:
-            command.append("--choose-root")
-        if include_artifacts:
-            command.append("--include-artifacts")
-        if image_library:
-            command.append("--image-library")
-        return command
+        return [str(Path(sys.executable))]
+    cargo = shutil.which("cargo")
+    if cargo is not None:
+        return [cargo, "run", "--manifest-path", str(TAURI_ROOT / "Cargo.toml")]
+    for candidate in _tauri_executable_candidates():
+        if candidate.exists():
+            return [str(candidate)]
+    raise RuntimeError(
+        "No Tauri desktop executable was found and cargo is unavailable. "
+        "Build the desktop app first with `uv run python scripts/build_windows_dist.py` "
+        "or install Rust to use the development launcher."
+    )
 
-    app_path = _streamlit_app_path()
-    command = [
-        sys.executable,
-        "-m",
-        "streamlit",
-        "run",
-        str(app_path),
-        "--server.headless=true",
-        "--server.address=127.0.0.1",
-        f"--server.port={port}",
-        "--browser.gatherUsageStats=false",
-        "--",
+
+def _tauri_executable_candidates() -> list[Path]:
+    candidates = [
+        TAURI_ROOT / "target" / "release" / "mplgallery-desktop.exe",
+        TAURI_ROOT / "target" / "debug" / "mplgallery-desktop.exe",
+        REPO_ROOT / "dist" / "windows" / "mplgallery-desktop.exe",
     ]
-    if project_root is not None:
-        command.extend(["--project-root", str(project_root)])
-    else:
-        command.append("--blank-start")
-    if choose_root:
-        command.append("--choose-root")
-    if include_artifacts:
-        command.append("--include-artifacts")
-    if image_library:
-        command.append("--image-library")
-    return command
+    return candidates
 
 
-def _wait_for_server(
-    url: str,
-    process: subprocess.Popen[str],
+def _tauri_env(
     *,
-    timeout_seconds: float = 120.0,
-) -> None:
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            output = _read_output(process)
-            raise RuntimeError(f"Desktop backend exited before launch.\n{output}")
-        try:
-            with urllib.request.urlopen(url, timeout=1.0) as response:
-                if response.status < 500:
-                    return
-        except (urllib.error.URLError, TimeoutError, OSError):
-            time.sleep(0.2)
-    _stop_process(process)
-    output = _read_output(process)
-    raise RuntimeError(f"Timed out waiting for desktop backend at {url}.\n{output}")
-
-
-def _read_output(process: subprocess.Popen[str]) -> str:
-    if process.stdout is None:
-        return ""
-    return process.stdout.read().strip()
-
-
-def _stop_process(process: subprocess.Popen[str]) -> None:
-    if process.poll() is not None:
-        return
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
-
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
-
-
-def _streamlit_app_path() -> Path:
-    if getattr(sys, "frozen", False):
-        bundle_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
-        return bundle_root / "mplgallery" / "ui" / "app.py"
-    return Path(__file__).parent / "ui" / "app.py"
-
-
-def _run_internal_streamlit(
     project_root: Path | None,
-    *,
-    port: int,
     choose_root: bool,
     include_artifacts: bool,
     image_library: bool,
-) -> int:
-    from streamlit.web import cli as stcli
-
-    app_path = _streamlit_app_path()
-    _trace("run_internal_streamlit", {"app_path": str(app_path), "port": port})
-    argv = [
-        "streamlit",
-        "run",
-        str(app_path),
-        "--server.headless=true",
-        "--server.address=127.0.0.1",
-        f"--server.port={port}",
-        "--browser.gatherUsageStats=false",
-        "--",
-    ]
-    if project_root is not None:
-        argv.extend(["--project-root", str(project_root.expanduser().resolve())])
-    else:
-        argv.append("--blank-start")
-    if choose_root:
-        argv.append("--choose-root")
-    if include_artifacts:
-        argv.append("--include-artifacts")
-    if image_library:
-        argv.append("--image-library")
-    previous_argv = sys.argv[:]
-    streamlit_env = _streamlit_env()
-    previous_env = {key: os.environ.get(key) for key in streamlit_env}
-    try:
-        os.environ.update(streamlit_env)
-        sys.argv = argv
-        try:
-            result = stcli.main()
-        except SystemExit as exc:
-            return int(exc.code or 0)
-        return int(result or 0)
-    finally:
-        sys.argv = previous_argv
-        for key, value in previous_env.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-
-
-def _streamlit_env() -> dict[str, str]:
+    width: int,
+    height: int,
+    title: str,
+) -> dict[str, str]:
     env = os.environ.copy()
-    env["BROWSER"] = os.environ.get("BROWSER", "none")
-    # Frozen Streamlit runs from a PyInstaller temp bundle instead of site-packages,
-    # which makes Streamlit auto-enable developmentMode unless we override it.
-    env["STREAMLIT_GLOBAL_DEVELOPMENT_MODE"] = os.environ.get(
-        "STREAMLIT_GLOBAL_DEVELOPMENT_MODE", "false"
-    )
+    env["MPLGALLERY_ACTIVE_ROOT"] = str(project_root) if project_root is not None else ""
+    env["MPLGALLERY_CHOOSE_ROOT"] = "1" if choose_root else "0"
+    env["MPLGALLERY_INCLUDE_ARTIFACTS"] = "1" if include_artifacts else "0"
+    env["MPLGALLERY_IMAGE_LIBRARY"] = "1" if image_library else "0"
+    env["MPLGALLERY_WINDOW_WIDTH"] = str(width)
+    env["MPLGALLERY_WINDOW_HEIGHT"] = str(height)
+    env["MPLGALLERY_WINDOW_TITLE"] = title
     return env
 
 
+def _preview_html_path() -> Path:
+    preview = FRONTEND_DIST_ROOT / "index.html"
+    if not preview.exists():
+        raise RuntimeError(
+            "Browser preview assets are missing. Build the frontend first with "
+            "`npm --prefix src/mplgallery/ui/frontend run build`."
+        )
+    return preview
+
+
+def _browser_preview_html_path(
+    *,
+    project_root: Path | None,
+    include_artifacts: bool,
+    image_library: bool,
+) -> Path:
+    preview = _preview_html_path()
+    active_root = (project_root or (REPO_ROOT / "examples")).expanduser().resolve()
+    payload_json = json.dumps(
+        _browser_preview_payload(
+            active_root,
+            include_artifacts=include_artifacts,
+            image_library=image_library,
+        ),
+        separators=(",", ":"),
+    ).replace("</", "<\\/")
+    html = preview.read_text(encoding="utf-8")
+    injection = f'<script>window.__MPLGALLERY_BROWSER_PAYLOAD__={payload_json};</script>\n'
+    if '<script type="module"' in html:
+        html = html.replace('<script type="module"', f"{injection}    <script type=\"module\"", 1)
+    else:
+        html = html.replace("</head>", f"    {injection}</head>", 1)
+    target = FRONTEND_DIST_ROOT / "browser-preview.html"
+    target.write_text(html, encoding="utf-8")
+    return target
+
+
+def _browser_preview_payload(
+    project_root: Path,
+    *,
+    include_artifacts: bool,
+    image_library: bool,
+) -> dict[str, object]:
+    from mplgallery.core.studio import build_csv_studio_index
+    from mplgallery.core.user_settings import load_user_settings
+    from mplgallery.ui.component import _plot_set_payloads, build_component_payload
+
+    settings = load_user_settings()
+    index = build_csv_studio_index(
+        project_root,
+        include_artifacts=include_artifacts,
+        image_library_mode=image_library,
+    )
+    hydrated_plot_set_ids = {
+        str(plot_set["plotSetId"])
+        for plot_set in _plot_set_payloads(index.records, index.datasets)
+        if "plotSetId" in plot_set
+    }
+    return build_component_payload(
+        project_root=project_root,
+        active_root=project_root,
+        records=index.records,
+        datasets=index.datasets,
+        browse_mode=index.browse_mode,
+        selected_plot_id=None,
+        errors={},
+        launch_root=project_root,
+        recent_roots=settings.recent_roots if settings.remember_recent_projects else (),
+        root_error=None,
+        show_root_chooser=False,
+        hydrated_plot_set_ids=hydrated_plot_set_ids,
+        app_info=_desktop_update_payload(),
+        user_settings=settings,
+    )
+
+
+def _start_browser_preview_server(preview_root: Path, preview_name: str) -> str:
+    port = _find_open_port(preferred=51226)
+    command = [
+        sys.executable,
+        "-m",
+        "mplgallery.preview_server",
+        "--directory",
+        str(preview_root),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+    ]
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    subprocess.Popen(
+        command,
+        cwd=REPO_ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creationflags,
+    )
+    _wait_for_local_server("127.0.0.1", port)
+    return f"http://127.0.0.1:{port}/{preview_name}"
+
+
+def _find_open_port(*, preferred: int | None = None) -> int:
+    if preferred is not None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(("127.0.0.1", preferred))
+            except OSError:
+                pass
+            else:
+                return preferred
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_local_server(host: str, port: int, *, timeout_seconds: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            if sock.connect_ex((host, port)) == 0:
+                return
+        time.sleep(0.1)
+    raise RuntimeError(f"Browser preview server did not start on http://{host}:{port}/")
+
+
 def _write_self_test(output_path: Path) -> None:
+    command = _tauri_command()
     payload = {
         "ok": True,
-        "frozen": bool(getattr(sys, "frozen", False)),
-        "executable": sys.executable,
-        "app_path": str(_streamlit_app_path()),
-        "app_id": APP_USER_MODEL_ID,
         "version": APP_VERSION,
+        "app_id": APP_USER_MODEL_ID,
+        "launcher_command": command,
+        "preview_html": str(_preview_html_path()) if (FRONTEND_DIST_ROOT / "index.html").exists() else None,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    _trace("write_self_test", payload)
-
-
-def _smoke_browser_launch(
-    project_root: Path | None,
-    *,
-    port: int | None,
-    choose_root: bool,
-    include_artifacts: bool,
-    image_library: bool,
-    output_path: Path | None,
-) -> int:
-    resolved_root = project_root.expanduser().resolve() if project_root is not None else None
-    server_port = port or _find_free_port()
-    _trace("smoke_browser_launch:start", {"project_root": str(resolved_root), "port": server_port})
-    server_process = _start_streamlit_server(
-        resolved_root,
-        port=server_port,
-        choose_root=choose_root,
-        include_artifacts=include_artifacts,
-        image_library=image_library,
-    )
-    url = f"http://127.0.0.1:{server_port}"
-    try:
-        _wait_for_server(url, server_process)
-        payload = {
-            "ok": True,
-            "frozen": bool(getattr(sys, "frozen", False)),
-            "url": url,
-            "project_root": str(resolved_root),
-            "app_path": str(_streamlit_app_path()),
-        }
-        if output_path is not None:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        _trace("smoke_browser_launch:ok", payload)
-        return 0
-    finally:
-        _stop_process(server_process)
-
-
-def _trace(event: str, payload: dict[str, object] | None = None) -> None:
-    trace_path = os.getenv("MPLGALLERY_DESKTOP_TRACE")
-    if not trace_path:
-        return
-    record = {"event": event, "payload": payload or {}}
-    path = Path(trace_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record) + "\n")
 
 
 def _desktop_update_payload() -> dict[str, object]:
-    can_install_updates = os.name == "nt" and bool(getattr(sys, "frozen", False))
     return {
         "name": APP_NAME,
         "version": APP_VERSION,
         "appId": APP_USER_MODEL_ID,
-        "canInstallUpdates": can_install_updates,
-        "update": (
-            check_for_updates(timeout_seconds=0.75).to_payload()
-            if can_install_updates
-            else UpdateCheckResult(checked=False).to_payload()
-        ),
+        "canInstallUpdates": False,
+        "update": {
+            "checked": False,
+            "available": False,
+            "currentVersion": APP_VERSION,
+            "latestVersion": APP_VERSION,
+            "error": None,
+        },
     }
-
-
-def _loading_html() -> str:
-    return """<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>
-      html, body {
-        margin: 0;
-        height: 100%;
-        background: #f4f6f8;
-        color: #17202f;
-        font-family: "Segoe UI", system-ui, sans-serif;
-      }
-      body {
-        display: grid;
-        place-items: center;
-      }
-      main {
-        display: grid;
-        justify-items: center;
-        gap: 12px;
-      }
-      .mark {
-        display: grid;
-        place-items: center;
-        width: 52px;
-        height: 52px;
-        border: 1px solid #cbd6e2;
-        border-radius: 14px;
-        background: #fff;
-        box-shadow: 0 18px 46px rgba(23, 32, 47, 0.12);
-        color: #256f8f;
-        font-size: 26px;
-        font-weight: 800;
-      }
-      h1 {
-        margin: 0;
-        font-size: 18px;
-      }
-      p {
-        margin: 0;
-        color: #5a6675;
-        font-size: 13px;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <div class="mark">M</div>
-      <h1>Opening MPLGallery</h1>
-      <p>Starting the local plotting workspace...</p>
-    </main>
-  </body>
-</html>"""
-
-
-def _error_html(message: str) -> str:
-    safe_message = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    return f"""<!doctype html>
-<html>
-  <body style="font-family: Segoe UI, system-ui, sans-serif; padding: 28px; color: #17202f;">
-    <h1>MPLGallery could not start</h1>
-    <pre style="white-space: pre-wrap;">{safe_message}</pre>
-  </body>
-</html>"""
 
 
 if __name__ == "__main__":

@@ -25,9 +25,11 @@ import {
   Table2,
   FileCode2,
 } from "lucide-react";
-import { Streamlit } from "streamlit-component-lib";
+import type { AppHost } from "./appHost";
+import { defaultHostCapabilities, noopHost } from "./appHost";
 import type {
   BrowserPayload,
+  ComponentEvent,
   DatasetRecord,
   FileItem,
   FolderViewNode,
@@ -53,6 +55,7 @@ import "./App.css";
 
 type StreamlitProps = {
   payload?: BrowserPayload;
+  host?: AppHost;
 };
 
 type DataPlotItem = {
@@ -65,20 +68,28 @@ type DataPlotItem = {
 type CsvPreviewData = {
   id: string;
   label: string;
+  rowCountSampled?: number;
+  columnCount?: number;
+  numericColumnCount?: number;
+  categoricalColumnCount?: number;
   previewColumns: string[];
   previewRows: Array<Record<string, string | number | boolean | null>>;
   previewTruncated: boolean;
   previewError?: string | null;
 };
 
-type FileFilter = "csv" | "svg" | "png" | "yaml" | "missing";
+type FileFilter = "csv" | "svg" | "png" | "missing";
 type GalleryLayoutMode = "grid" | "rows" | "columns";
+type CustomSet = {
+  id: string;
+  name: string;
+  plotSetIds: string[];
+};
 
 const FILE_FILTERS: Array<{ value: FileFilter; label: string; title: string }> = [
   { value: "csv", label: "CSV", title: "Show plot sets with CSV files" },
   { value: "svg", label: "SVG", title: "Show plot sets with SVG figures" },
   { value: "png", label: "PNG", title: "Show plot sets with PNG figures" },
-  { value: "yaml", label: "YAML", title: "Show plot sets with Matplotlib YAML metadata" },
   { value: "missing", label: "Missing", title: "Show CSV files that do not have figures yet" },
 ];
 
@@ -133,8 +144,43 @@ const layoutBounds = {
   folderPaneMax: 320,
 };
 
+function customSetsStorageKey(projectRoot: string): string {
+  const normalized = projectRoot.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  return `mplgallery:custom-sets:${normalized || "no-project"}`;
+}
+
+function loadCustomSets(projectRoot: string): CustomSet[] {
+  if (typeof window === "undefined" || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(customSetsStorageKey(projectRoot));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is CustomSet => Boolean(item && typeof item.id === "string" && typeof item.name === "string" && Array.isArray(item.plotSetIds)))
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        plotSetIds: item.plotSetIds.filter((plotSetId): plotSetId is string => typeof plotSetId === "string" && plotSetId.trim().length > 0),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomSets(projectRoot: string, customSets: CustomSet[]) {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(customSetsStorageKey(projectRoot), JSON.stringify(customSets));
+  } catch {
+    // ignore storage failures
+  }
+}
+
 function App(props: StreamlitProps) {
   const payload = props.payload ?? emptyPayload;
+  const host = props.host ?? noopHost;
+  const hostCapabilities = { ...defaultHostCapabilities, ...(host.capabilities ?? {}) };
   const appInfo = payload.appInfo ?? emptyPayload.appInfo;
   const userSettings = payload.userSettings ?? emptyPayload.userSettings;
   const updateInfo = appInfo?.update ?? null;
@@ -145,7 +191,7 @@ function App(props: StreamlitProps) {
   );
   const imageLibraryMode = browseMode === "image-library";
   const itemNoun = imageLibraryMode ? "images" : "plot sets";
-  const workspaceTitle = imageLibraryMode ? "Images" : "Plot sets";
+  const workspaceTitle = imageLibraryMode ? "Images" : "Gallery";
   const rootContext = payload.rootContext ?? {
     activeRoot: payload.projectRoot,
     launchRoot: payload.projectRoot,
@@ -169,8 +215,6 @@ function App(props: StreamlitProps) {
   const [fileFilters, setFileFilters] = useState<Set<FileFilter>>(() => new Set());
   const [showUngrouped, setShowUngrouped] = useState(false);
   const [tileSize, setTileSize] = useState(230);
-  const tileSizeRef = useRef(230);
-  const [cardSizes, setCardSizes] = useState<Record<string, number>>({});
   const [maximizedPlotId, setMaximizedPlotId] = useState<string | null>(null);
   const [activeCardTabs, setActiveCardTabs] = useState<Record<string, string>>({});
   const [pendingDraftDatasetId, setPendingDraftDatasetId] = useState<string | null>(null);
@@ -187,7 +231,15 @@ function App(props: StreamlitProps) {
   const [checkedPlotSetOrder, setCheckedPlotSetOrder] = useState<string[]>([]);
   const [draggingPlotSetId, setDraggingPlotSetId] = useState<string | null>(null);
   const [dropTargetPlotSetId, setDropTargetPlotSetId] = useState<string | null>(null);
+  const customSetsProjectRoot = rootContext.activeRoot || payload.projectRoot;
+  const [customSets, setCustomSets] = useState<CustomSet[]>(() => loadCustomSets(customSetsProjectRoot));
+  const [customSetDraft, setCustomSetDraft] = useState("");
+  const [showCustomSetComposer, setShowCustomSetComposer] = useState(false);
   const sidebarsAutoCollapsed = foldersCollapsed && filesCollapsed;
+  const draftingEnabled = hostCapabilities.supportsDrafting;
+  const editingEnabled = hostCapabilities.supportsEditing;
+  const browseDialogEnabled = hostCapabilities.supportsBrowseDialog;
+  const rootResetEnabled = hostCapabilities.supportsRootReset;
 
   useEffect(() => {
     setSelectedPlotId(payload.selectedPlotId ?? null);
@@ -196,6 +248,14 @@ function App(props: StreamlitProps) {
   useEffect(() => {
     setBrowseModeState(payload.browseMode ?? "plot-set-manager");
   }, [payload.browseMode]);
+
+  useEffect(() => {
+    setCustomSets(loadCustomSets(customSetsProjectRoot));
+  }, [customSetsProjectRoot]);
+
+  useEffect(() => {
+    saveCustomSets(customSetsProjectRoot, customSets);
+  }, [customSetsProjectRoot, customSets]);
 
   useEffect(() => {
     if (!updateInfo?.available || updateInstallInfo?.started || updateInstallInfo?.error) {
@@ -218,7 +278,8 @@ function App(props: StreamlitProps) {
     setMaximizedPlotId(null);
     setRootDraft(rootContext.activeRoot);
     setCheckedPlotSetOrder([]);
-    setCardSizes({});
+    setCustomSetDraft("");
+    setShowCustomSetComposer(false);
   }, [rootContext.activeRoot, payload.selectedPlotId, payload.folderView?.defaultSelectedPath]);
 
   useEffect(() => {
@@ -270,19 +331,34 @@ function App(props: StreamlitProps) {
     () => payload.plotSets ?? legacyPlotSets(payload.datasets, payload.records, recordsByDatasetId),
     [payload.plotSets, payload.datasets, payload.records, recordsByDatasetId],
   );
+  const visiblePlotSets = useMemo(
+    () => (imageLibraryMode ? plotSets.filter(isImageDiscoverablePlotSet) : plotSets),
+    [imageLibraryMode, plotSets],
+  );
+  const validPlotSetIds = useMemo(() => new Set(plotSets.map((plotSet) => plotSet.plotSetId)), [plotSets]);
+  const availableCustomSets = useMemo(
+    () =>
+      customSets
+        .map((customSet) => ({
+          ...customSet,
+          plotSetIds: customSet.plotSetIds.filter((plotSetId) => validPlotSetIds.has(plotSetId)),
+        }))
+        .filter((customSet) => customSet.plotSetIds.length > 0),
+    [customSets, validPlotSetIds],
+  );
   const folderNodes = useMemo(
     () =>
       payload.folderView?.nodes?.length
         ? payload.folderView.nodes
-        : folderNodesFromPlotSets(plotSets, projectRootName(rootContext.activeRoot)),
-    [payload.folderView?.nodes, plotSets, rootContext.activeRoot],
+        : folderNodesFromPlotSets(visiblePlotSets, projectRootName(rootContext.activeRoot)),
+    [payload.folderView?.nodes, visiblePlotSets, rootContext.activeRoot],
   );
   const filteredPlotSets = useMemo(
     () =>
-      plotSets.filter(
+      visiblePlotSets.filter(
         (plotSet) => plotSetMatchesFolder(plotSet, selectedFolder) && plotSetMatchesFilters(plotSet, fileFilters),
       ),
-    [plotSets, selectedFolder, fileFilters],
+    [visiblePlotSets, selectedFolder, fileFilters],
   );
   const selectedPlotRecord = selectedPlotId
     ? payload.records.find((record) => record.id === selectedPlotId) ?? null
@@ -325,27 +401,29 @@ function App(props: StreamlitProps) {
   useEffect(() => {
     setCheckedPlotSetIds((current) => {
       if (!hasUserFilter) return new Set();
-      const validIds = new Set(plotSets.map((plotSet) => plotSet.plotSetId));
+      const validIds = new Set(visiblePlotSets.map((plotSet) => plotSet.plotSetId));
       return new Set([...current].filter((plotSetId) => validIds.has(plotSetId)));
     });
-  }, [plotSets, hasUserFilter]);
+  }, [visiblePlotSets, hasUserFilter]);
 
   useEffect(() => {
-    const validIds = new Set(plotSets.map((plotSet) => plotSet.plotSetId));
+    const validIds = new Set(visiblePlotSets.map((plotSet) => plotSet.plotSetId));
     setCheckedPlotSetOrder((current) => current.filter((plotSetId) => validIds.has(plotSetId)));
-  }, [plotSets]);
+  }, [visiblePlotSets]);
 
   function selectFolder(folderPath: string) {
     setSelectedFolder(folderPath);
   }
 
+  function emitEvent(event: ComponentEvent) {
+    void host.emitEvent(event);
+  }
+
   function emitCheckedPlotSetIds(plotSetIds: Set<string>) {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("set_checked_plot_sets"),
-        type: "set_checked_plot_sets",
-        plot_set_ids: [...plotSetIds],
-      },
+    emitEvent({
+      id: eventId("set_checked_plot_sets"),
+      type: "set_checked_plot_sets",
+      plot_set_ids: [...plotSetIds],
     });
   }
 
@@ -447,6 +525,52 @@ function App(props: StreamlitProps) {
     });
   }
 
+  function clearGallerySelection() {
+    setHasUserFilter(true);
+    setCheckedPlotSetIds(new Set());
+    setCheckedPlotSetOrder([]);
+    setCheckedDatasetIds(new Set());
+    setCheckedPlotIds(new Set());
+    emitCheckedPlotSetIds(new Set());
+  }
+
+  function createCustomSet() {
+    const selectedIds = checkedPlotSetOrder.filter((plotSetId) => checkedPlotSetIds.has(plotSetId));
+    if (!selectedIds.length) return;
+    const name = customSetDraft.trim() || `Custom set ${availableCustomSets.length + 1}`;
+    setCustomSets((current) => [
+      ...current,
+      {
+        id: eventId("custom-set"),
+        name,
+        plotSetIds: selectedIds,
+      },
+    ]);
+    setCustomSetDraft("");
+    setShowCustomSetComposer(false);
+  }
+
+  function applyCustomSet(customSet: CustomSet) {
+    const nextIds = customSet.plotSetIds.filter((plotSetId) => validPlotSetIds.has(plotSetId));
+    if (!nextIds.length) return;
+    const sameSelection =
+      nextIds.length === checkedPlotSetIds.size
+      && nextIds.every((plotSetId) => checkedPlotSetIds.has(plotSetId));
+    if (sameSelection) {
+      clearGallerySelection();
+      return;
+    }
+    const nextChecked = new Set(nextIds);
+    setHasUserFilter(true);
+    setSelectedFolder(".");
+    setCheckedPlotSetIds(nextChecked);
+    setCheckedPlotSetOrder(nextIds);
+    setCheckedDatasetIds(new Set());
+    setCheckedPlotIds(new Set());
+    emitCheckedPlotSetIds(nextChecked);
+    if (nextIds[0]) focusPlotSet(nextIds[0]);
+  }
+
   function reorderDraggingPlotSet(draggedPlotSetId: string, targetPlotSetId: string) {
     if (
       checkedPlotSetIds.has(draggedPlotSetId)
@@ -484,26 +608,22 @@ function App(props: StreamlitProps) {
   }
 
   function draftDatasetWithPreferences(datasetId: string, redraw: RedrawMetadata, outputFormat: "svg" | "png") {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("draft_dataset_with_preferences"),
-        type: "draft_dataset_with_preferences",
-        dataset_id: datasetId,
-        redraw,
-        output_format: outputFormat,
-      },
+    emitEvent({
+      id: eventId("draft_dataset_with_preferences"),
+      type: "draft_dataset_with_preferences",
+      dataset_id: datasetId,
+      redraw,
+      output_format: outputFormat,
     });
     setPendingDraftDatasetId(datasetId);
     setDraftPreferencesDatasetId(null);
   }
 
   function draftCheckedDatasets() {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("draft_checked_datasets"),
-        type: "draft_checked_datasets",
-        dataset_ids: [...checkedDatasetIds],
-      },
+    emitEvent({
+      id: eventId("draft_checked_datasets"),
+      type: "draft_checked_datasets",
+      dataset_ids: [...checkedDatasetIds],
     });
   }
 
@@ -514,15 +634,7 @@ function App(props: StreamlitProps) {
 
   function updateTileSize(value: number) {
     const nextTileSize = clampNumber(value, 160, 1400);
-    const ratio = nextTileSize / Math.max(tileSizeRef.current, 1);
-    tileSizeRef.current = nextTileSize;
     setTileSize(nextTileSize);
-    setCardSizes((current) => {
-      const next = Object.fromEntries(
-        Object.entries(current).map(([cardId, size]) => [cardId, clampNumber(size * ratio, 180, 1400)]),
-      );
-      return next;
-    });
   }
 
   function updateTileSizeFromInputClientX(input: HTMLInputElement, clientX: number) {
@@ -573,11 +685,8 @@ function App(props: StreamlitProps) {
     });
   }
 
-  function resizeCard(cardId: string, size: number) {
-    setCardSizes((current) => ({
-      ...current,
-      [cardId]: clampNumber(size, 180, 1400),
-    }));
+  function resizeCard(size: number) {
+    updateTileSize(size);
   }
 
   function toggleFoldersCollapsed() {
@@ -598,96 +707,78 @@ function App(props: StreamlitProps) {
     setSelectedFileId(null);
     setActiveCardTabs({});
     setFileFilters(new Set());
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("set_browse_mode"),
-        type: "set_browse_mode",
-        browse_mode: mode,
-      },
+    emitEvent({
+      id: eventId("set_browse_mode"),
+      type: "set_browse_mode",
+      browse_mode: mode,
     });
   }
 
   function changeProjectRoot(rootPath: string) {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("change_project_root"),
-        type: "change_project_root",
-        root_path: rootPath,
-      },
+    emitEvent({
+      id: eventId("change_project_root"),
+      type: "change_project_root",
+      root_path: rootPath,
     });
   }
 
   function browseProjectRoot() {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("browse_project_root"),
-        type: "browse_project_root",
-      },
+    emitEvent({
+      id: eventId("browse_project_root"),
+      type: "browse_project_root",
     });
   }
 
   function resetProjectRoot() {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("reset_project_root"),
-        type: "reset_project_root",
-      },
+    emitEvent({
+      id: eventId("reset_project_root"),
+      type: "reset_project_root",
     });
   }
 
   function openUpdate() {
     const target = updateInfo?.downloadUrl || updateInfo?.releaseUrl;
     if (!target) return;
-    if (canInstallUpdate && updateInfo?.downloadUrl) {
+    if (hostCapabilities.supportsInlineUpdateInstall && canInstallUpdate && updateInfo?.downloadUrl) {
       setUpdateInstallPending(true);
-      Streamlit.setComponentValue({
-        event: {
-          id: eventId("install_update"),
-          type: "install_update",
-          download_url: updateInfo.downloadUrl,
-        },
+      emitEvent({
+        id: eventId("install_update"),
+        type: "install_update",
+        download_url: updateInfo.downloadUrl,
       });
       return;
     }
-    window.open(target, "_blank", "noopener,noreferrer");
+    host.openExternal(target);
   }
 
   function forgetRecentRoot(rootPath: string) {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("forget_recent_root"),
-        type: "forget_recent_root",
-        root_path: rootPath,
-      },
+    emitEvent({
+      id: eventId("forget_recent_root"),
+      type: "forget_recent_root",
+      root_path: rootPath,
     });
   }
 
   function setUserSetting(settingKey: string, settingValue: boolean) {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("set_user_setting"),
-        type: "set_user_setting",
-        setting_key: settingKey,
-        setting_value: settingValue,
-      },
+    emitEvent({
+      id: eventId("set_user_setting"),
+      type: "set_user_setting",
+      setting_key: settingKey,
+      setting_value: settingValue,
     });
   }
 
   function clearRecentRoots() {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("clear_recent_roots"),
-        type: "clear_recent_roots",
-      },
+    emitEvent({
+      id: eventId("clear_recent_roots"),
+      type: "clear_recent_roots",
     });
   }
 
   function refreshIndex() {
-    Streamlit.setComponentValue({
-      event: {
-        id: eventId("refresh_index"),
-        type: "refresh_index",
-      },
+    emitEvent({
+      id: eventId("refresh_index"),
+      type: "refresh_index",
     });
   }
 
@@ -795,10 +886,10 @@ function App(props: StreamlitProps) {
                 <button type="button" onClick={() => changeProjectRoot(rootDraft)}>
                   Open root
                 </button>
-                <button type="button" onClick={browseProjectRoot}>
+                <button type="button" onClick={browseProjectRoot} disabled={!browseDialogEnabled}>
                   Open Project...
                 </button>
-                <button type="button" onClick={resetProjectRoot}>
+                <button type="button" onClick={resetProjectRoot} disabled={!rootResetEnabled}>
                   Launch root
                 </button>
               </div>
@@ -823,7 +914,7 @@ function App(props: StreamlitProps) {
             </div>
           ) : null}
         </div>
-        <button type="button" className="mg-appbar-button" onClick={browseProjectRoot}>
+        <button type="button" className="mg-appbar-button" onClick={browseProjectRoot} disabled={!browseDialogEnabled}>
           <FolderOpen aria-hidden="true" size={16} />
           Open Project...
         </button>
@@ -845,16 +936,18 @@ function App(props: StreamlitProps) {
             Pictures
           </button>
         </div>
-        <button
-          type="button"
-          className="mg-appbar-button"
-          onClick={draftCheckedDatasets}
-          disabled={!checkedDatasetIds.size}
-        >
-          <BarChart3 aria-hidden="true" size={16} />
-          Generate plots
-          <ChevronDown aria-hidden="true" size={13} />
-        </button>
+        {draftingEnabled ? (
+          <button
+            type="button"
+            className="mg-appbar-button"
+            onClick={draftCheckedDatasets}
+            disabled={!checkedDatasetIds.size}
+          >
+            <BarChart3 aria-hidden="true" size={16} />
+            Generate plots
+            <ChevronDown aria-hidden="true" size={13} />
+          </button>
+        ) : null}
         <button type="button" className="mg-appbar-button" onClick={refreshIndex}>
           <RefreshCw aria-hidden="true" size={16} />
           Refresh
@@ -943,8 +1036,8 @@ function App(props: StreamlitProps) {
                 <li>Use folder rows to scope the Files pane.</li>
                 <li>Click a file row to select it and add its card.</li>
                 <li>Use file-type chips to narrow the Files pane.</li>
-                <li>Drag checked cards to reorder them, or drag the lower-right corner to resize them.</li>
-                <li>Use card tabs for CSV, SVG, PNG, and YAML views.</li>
+                <li>Drag checked cards to reorder them, or drag the lower-right corner to resize the whole gallery.</li>
+                <li>Use card tabs for CSV, SVG, and PNG views.</li>
               </ul>
             </div>
           ) : null}
@@ -956,7 +1049,7 @@ function App(props: StreamlitProps) {
             <h1>No project open</h1>
             <p>Open a project folder to start browsing plots and images.</p>
             {rootContext.error ? <div className="mg-root-error">{rootContext.error}</div> : null}
-            <button type="button" className="mg-appbar-button" onClick={browseProjectRoot}>
+            <button type="button" className="mg-appbar-button" onClick={browseProjectRoot} disabled={!browseDialogEnabled}>
               <FolderOpen aria-hidden="true" size={16} />
               Open Project...
             </button>
@@ -982,8 +1075,11 @@ function App(props: StreamlitProps) {
               nodes={folderNodes}
               selectedFolder={selectedFolder}
               collapsed={foldersCollapsed}
+              customSets={availableCustomSets}
+              checkedPlotSetIds={checkedPlotSetIds}
               onToggleCollapsed={toggleFoldersCollapsed}
               onSelectFolder={selectFolder}
+              onApplyCustomSet={applyCustomSet}
             />
             <div
               className="mg-pane-resizer"
@@ -1035,7 +1131,62 @@ function App(props: StreamlitProps) {
           <main className="mg-workspace" aria-label="Plot workspace">
         <div className="mg-workspace-header">
           <div className="mg-workspace-heading">
-            <div className="mg-workspace-title">{workspaceTitle}</div>
+            <div className="mg-workspace-title-row">
+              <div className="mg-workspace-title">{workspaceTitle}</div>
+              {!imageLibraryMode ? (
+                <div className="mg-workspace-title-actions">
+                  <button
+                    type="button"
+                    className="mg-inspector-toggle"
+                    disabled={!checkedPlotSetIds.size}
+                    onClick={clearGallerySelection}
+                  >
+                    Clear gallery
+                  </button>
+                  <button
+                    type="button"
+                    className="mg-inspector-toggle"
+                    disabled={!checkedPlotSetIds.size}
+                    onClick={() => {
+                      setCustomSetDraft(`Custom set ${availableCustomSets.length + 1}`);
+                      setShowCustomSetComposer(true);
+                    }}
+                  >
+                    Create set
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            {showCustomSetComposer ? (
+              <div className="mg-custom-set-composer">
+                <input
+                  aria-label="Custom set name"
+                  autoFocus
+                  value={customSetDraft}
+                  onChange={(event) => setCustomSetDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") createCustomSet();
+                    if (event.key === "Escape") {
+                      setShowCustomSetComposer(false);
+                      setCustomSetDraft("");
+                    }
+                  }}
+                />
+                <button type="button" className="mg-inspector-toggle" onClick={createCustomSet}>
+                  Save set
+                </button>
+                <button
+                  type="button"
+                  className="mg-inspector-toggle"
+                  onClick={() => {
+                    setShowCustomSetComposer(false);
+                    setCustomSetDraft("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : null}
             <div className="mg-eyebrow">{filteredPlotSets.length} in folder</div>
           </div>
           <div className="mg-header-actions">
@@ -1101,36 +1252,34 @@ function App(props: StreamlitProps) {
                       || item.records.some((record) => record.id === selectedRecord?.id)
                     }
                     tileSize={tileSize}
-                    cardSize={cardSizes[item.id] ?? tileSize}
+                    cardSize={tileSize}
                     onActivateTab={(tab) => {
                       setActiveCardTabs((current) => ({ ...current, [item.id]: tab }));
                     }}
                     onGenerate={() => {
-                      if (item.dataset) draftDataset(item.dataset.id);
+                      if (item.dataset && draftingEnabled) draftDataset(item.dataset.id);
                     }}
                     onMaximize={(plotId) => maximizePlot(plotId)}
                     onSaveRedraw={(plotId, redraw) => {
-                      Streamlit.setComponentValue({
-                        event: {
-                          id: eventId("save_redraw_metadata"),
-                          type: "save_redraw_metadata",
-                          plot_id: plotId,
-                          redraw,
-                        },
+                      emitEvent({
+                        id: eventId("save_redraw_metadata"),
+                        type: "save_redraw_metadata",
+                        plot_id: plotId,
+                        redraw,
                       });
                     }}
                     onSaveYaml={(plotId, attachmentPath, yamlText) => {
-                      Streamlit.setComponentValue({
-                        event: {
-                          id: eventId("save_yaml_attachment"),
-                          type: "save_yaml_attachment",
-                          plot_id: plotId,
-                          attachment_path: attachmentPath,
-                          yaml_text: yamlText,
-                        },
+                      emitEvent({
+                        id: eventId("save_yaml_attachment"),
+                        type: "save_yaml_attachment",
+                        plot_id: plotId,
+                        attachment_path: attachmentPath,
+                        yaml_text: yamlText,
                       });
                     }}
-                    onResize={(size) => resizeCard(item.id, size)}
+                    editingEnabled={editingEnabled}
+                    draftingEnabled={draftingEnabled}
+                    onResize={(size) => resizeCard(size)}
                     checked={Boolean(item.plotSet && checkedPlotSetIds.has(item.plotSet.plotSetId))}
                     dragging={Boolean(item.plotSet && draggingPlotSetId === item.plotSet.plotSetId)}
                     dropTarget={Boolean(item.plotSet && dropTargetPlotSetId === item.plotSet.plotSetId)}
@@ -1175,26 +1324,24 @@ function App(props: StreamlitProps) {
         </>
       )}
 
-      {maximizedPlotId && maximizedRecord ? (
+      {editingEnabled && maximizedPlotId && maximizedRecord ? (
         <PlotLookModal
           payload={payload}
           record={maximizedRecord}
           error={payload.errors[maximizedRecord.id]}
           onClose={() => setMaximizedPlotId(null)}
           onSave={(redraw) => {
-            Streamlit.setComponentValue({
-              event: {
-                id: eventId("save_redraw_metadata"),
-                type: "save_redraw_metadata",
-                plot_id: maximizedRecord.id,
-                redraw,
-              },
+            emitEvent({
+              id: eventId("save_redraw_metadata"),
+              type: "save_redraw_metadata",
+              plot_id: maximizedRecord.id,
+              redraw,
             });
           }}
         />
       ) : null}
 
-      {draftPreferencesDataset ? (
+      {draftingEnabled && draftPreferencesDataset ? (
         <CsvDraftPreferencesModal
           payload={payload}
           dataset={draftPreferencesDataset}
@@ -1256,7 +1403,6 @@ function itemMatchesFilters(item: DataPlotItem, fileFilters: Set<FileFilter>): b
     if (fileFilter === "csv") return Boolean(item.dataset);
     if (fileFilter === "svg") return item.records.some((record) => record.kind.toLowerCase() === "svg");
     if (fileFilter === "png") return item.records.some((record) => record.kind.toLowerCase() === "png");
-    if (fileFilter === "yaml") return false;
     if (fileFilter === "missing") return Boolean(item.dataset && item.records.length === 0);
     return false;
   });
@@ -1301,10 +1447,13 @@ function plotSetMatchesFilters(plotSet: PlotSetEntity, fileFilters: Set<FileFilt
     if (fileFilter === "csv") return types.has("csv");
     if (fileFilter === "svg") return types.has("svg");
     if (fileFilter === "png") return types.has("png");
-    if (fileFilter === "yaml") return types.has("mpl_yaml");
     if (fileFilter === "missing") return types.has("csv") && !types.has("svg") && !types.has("png");
     return false;
   });
+}
+
+function isImageDiscoverablePlotSet(plotSet: PlotSetEntity): boolean {
+  return plotSet.attachments.some((attachment) => attachment.type === "svg" || attachment.type === "png");
 }
 
 function fileMatchesFilter(
@@ -1318,7 +1467,6 @@ function fileMatchesFilter(
     if (fileFilter === "csv") return file.kind === "csv";
     if (fileFilter === "svg") return file.kind === "image" && suffix === "svg";
     if (fileFilter === "png") return file.kind === "image" && suffix === "png";
-    if (fileFilter === "yaml") return suffix === "yaml" || suffix === "yml";
     if (fileFilter === "missing") {
       return file.kind === "csv" && Boolean(file.datasetId && !(recordsByDatasetId.get(file.datasetId)?.length));
     }
@@ -1387,14 +1535,20 @@ function FoldersPane({
   nodes,
   selectedFolder,
   collapsed,
+  customSets,
+  checkedPlotSetIds,
   onToggleCollapsed,
   onSelectFolder,
+  onApplyCustomSet,
 }: {
   nodes: FolderViewNode[];
   selectedFolder: string;
   collapsed: boolean;
+  customSets: CustomSet[];
+  checkedPlotSetIds: Set<string>;
   onToggleCollapsed: () => void;
   onSelectFolder: (path: string) => void;
+  onApplyCustomSet: (customSet: CustomSet) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const childNodes = useMemo(() => {
@@ -1501,6 +1655,36 @@ function FoldersPane({
       </div>
       <div role="tree" className="mg-folder-tree">
         {root ? renderFolder(root) : <div className="mg-empty is-small">No result folders.</div>}
+        <div className="mg-tree-row mg-folder-row is-custom-set-root" aria-label="Custom Sets">
+          <span className="mg-tree-twisty" aria-hidden="true" />
+          <div className="mg-tree-label">
+            <FileIcon kind="folder" />
+            <span className="mg-tree-name">Custom Sets</span>
+            {customSets.length ? <span className="mg-count">{customSets.length}</span> : null}
+          </div>
+        </div>
+        <div className="mg-custom-set-list">
+          {customSets.length ? (
+            customSets.map((customSet) => {
+              const allSelected =
+                customSet.plotSetIds.length > 0
+                && customSet.plotSetIds.every((plotSetId) => checkedPlotSetIds.has(plotSetId));
+              return (
+                <button
+                  type="button"
+                  key={customSet.id}
+                  className={`mg-custom-set-row ${allSelected ? "is-selected" : ""}`}
+                  onClick={() => onApplyCustomSet(customSet)}
+                >
+                  <span className="mg-custom-set-name">{customSet.name}</span>
+                  <span className="mg-count">{customSet.plotSetIds.length}</span>
+                </button>
+              );
+            })
+          ) : (
+            <div className="mg-empty is-small">No custom sets yet.</div>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -1573,16 +1757,6 @@ function FilesPane({
         <span>Files</span>
         <div className="mg-pane-title-actions">
           <span>{plotSets.length}</span>
-          <input
-            ref={selectAllRef}
-            type="checkbox"
-            className="mg-master-check"
-            disabled={!plotSets.length}
-            checked={allChecked}
-            aria-label={allChecked ? `Clear all ${itemNoun} in folder` : `Select all ${itemNoun} in folder`}
-            title={allChecked ? `Clear all ${itemNoun} in folder` : `Select all ${itemNoun} in folder`}
-            onChange={(event) => onToggleAllChecked(event.target.checked)}
-          />
           <button
             type="button"
             className="mg-pane-toggle is-icon-only"
@@ -1620,9 +1794,25 @@ function FilesPane({
       </div>
       <div className="mg-files-list" role="listbox" aria-label={itemNoun === "images" ? "Images" : "Plot sets"}>
         {plotSets.length ? (
+          <div className="mg-file-master-row">
+            <span>Select all</span>
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              className="mg-master-check"
+              disabled={!plotSets.length}
+              checked={allChecked}
+              aria-label={allChecked ? `Clear all ${itemNoun} in folder` : `Select all ${itemNoun} in folder`}
+              title={allChecked ? `Clear all ${itemNoun} in folder` : `Select all ${itemNoun} in folder`}
+              onChange={(event) => onToggleAllChecked(event.target.checked)}
+            />
+          </div>
+        ) : null}
+        {plotSets.length ? (
           plotSets.map((plotSet, index) => {
             const checked = checkedPlotSetIds.has(plotSet.plotSetId);
             const figure = plotSet.preferredFigure;
+            const fileLabel = imageMode ? figure?.displayName ?? plotSet.title : plotSet.title;
             return (
               <div
                 key={plotSet.plotSetId}
@@ -1634,7 +1824,7 @@ function FilesPane({
                 <button
                   type="button"
                   className="mg-file-main"
-                  title={plotSet.title}
+                  title={fileLabel}
                   onClick={() => {
                     if (checked) {
                       onToggleChecked(plotSet.plotSetId, false);
@@ -1645,7 +1835,7 @@ function FilesPane({
                   }}
                 >
                   <AttachmentIcon type={figure?.type ?? "csv"} />
-                  <span className="mg-file-title">{plotSet.title}</span>
+                  <span className="mg-file-title">{fileLabel}</span>
                   {imageMode ? null : (
                     <span className="mg-attachment-strip" aria-label={`Attachments for ${plotSet.title}`}>
                       {attachmentTypeSummary(plotSet).map((type) => (
@@ -1659,7 +1849,7 @@ function FilesPane({
                 <input
                   type="checkbox"
                   className="mg-tree-check"
-                  aria-label={`Show ${plotSet.title}`}
+                  aria-label={`Show ${fileLabel}`}
                   checked={checked}
                   onChange={(event) => onToggleChecked(plotSet.plotSetId, event.target.checked)}
                 />
@@ -1693,6 +1883,8 @@ function DataPlotCard({
   onMaximize,
   onSaveRedraw,
   onSaveYaml,
+  editingEnabled,
+  draftingEnabled,
   onResize,
   checked,
   dragging,
@@ -1713,6 +1905,8 @@ function DataPlotCard({
   onMaximize: (plotId: string) => void;
   onSaveRedraw: (plotId: string, redraw: RedrawMetadata) => void;
   onSaveYaml: (plotId: string, attachmentPath: string, yamlText: string) => void;
+  editingEnabled: boolean;
+  draftingEnabled: boolean;
   onResize: (size: number) => void;
   checked: boolean;
   dragging: boolean;
@@ -1726,7 +1920,9 @@ function DataPlotCard({
   const activeRecord = item.records.find((record) => record.id === activeTab) ?? item.records[0] ?? null;
   const csvPreview = csvPreviewData(item, activeRecord);
   const hasCsvTab = csvPreview !== null;
-  const yamlAttachments = item.plotSet?.attachments.filter((attachment) => attachment.type === "mpl_yaml") ?? [];
+  const yamlAttachments = editingEnabled
+    ? item.plotSet?.attachments.filter((attachment) => attachment.type === "mpl_yaml") ?? []
+    : [];
   const activeYaml = yamlAttachments.find((attachment) => attachment.id === activeTab) ?? null;
   const figureCount = item.records.length;
   const canGenerate = Boolean(item.dataset && figureCount === 0);
@@ -1761,19 +1957,25 @@ function DataPlotCard({
     event.preventDefault();
     const card = event.currentTarget;
     const pointerId = event.pointerId;
-    const startX = event.clientX;
-    const startY = event.clientY;
+    const rect = card.getBoundingClientRect();
+    const offsetX = event.clientX - rect.left;
+    const offsetY = event.clientY - rect.top;
     card.setPointerCapture?.(pointerId);
     card.style.transition = "none";
-    card.style.zIndex = "20";
+    card.style.position = "fixed";
+    card.style.left = `${rect.left}px`;
+    card.style.top = `${rect.top}px`;
+    card.style.width = `${rect.width}px`;
+    card.style.height = `${rect.height}px`;
+    card.style.margin = "0";
+    card.style.zIndex = "40";
     card.style.opacity = "0.92";
     card.style.pointerEvents = "none";
     onDragStart();
 
     const onPointerMove = (moveEvent: PointerEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const deltaY = moveEvent.clientY - startY;
-      card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+      card.style.left = `${moveEvent.clientX - offsetX}px`;
+      card.style.top = `${moveEvent.clientY - offsetY}px`;
       const targetCard = document
         .elementFromPoint(moveEvent.clientX, moveEvent.clientY)
         ?.closest<HTMLElement>("article.mg-data-plot-card[data-plot-set-id]");
@@ -1785,7 +1987,12 @@ function DataPlotCard({
 
     const onPointerUp = () => {
       card.style.transition = "";
-      card.style.transform = "";
+      card.style.position = "";
+      card.style.left = "";
+      card.style.top = "";
+      card.style.width = "";
+      card.style.height = "";
+      card.style.margin = "";
       card.style.zIndex = "";
       card.style.opacity = "";
       card.style.pointerEvents = "";
@@ -1867,7 +2074,7 @@ function DataPlotCard({
               </button>
             ))}
           </div>
-          {activeRecord ? (
+          {activeRecord && editingEnabled ? (
             <button type="button" className="mg-edit-button" onClick={() => onMaximize(activeRecord.id)}>
               Edit
             </button>
@@ -1901,7 +2108,7 @@ function DataPlotCard({
           <div className="mg-empty">No linked CSV or plot found.</div>
         )}
       </div>
-      {canGenerate ? (
+      {draftingEnabled && canGenerate ? (
         <div className="mg-card-body">
           <div className="mg-card-actions">
             <button type="button" className="mg-primary" onClick={onGenerate}>
@@ -1924,6 +2131,10 @@ function csvPreviewData(item: DataPlotItem, activeRecord: PlotRecord | null): Cs
     return {
       id: item.dataset.id,
       label: item.dataset.displayName,
+      rowCountSampled: item.dataset.rowCountSampled,
+      columnCount: item.dataset.columns.length,
+      numericColumnCount: item.dataset.numericColumns.length,
+      categoricalColumnCount: item.dataset.categoricalColumns.length,
       previewColumns: item.dataset.previewColumns,
       previewRows: item.dataset.previewRows,
       previewTruncated: item.dataset.previewTruncated,
@@ -1935,6 +2146,10 @@ function csvPreviewData(item: DataPlotItem, activeRecord: PlotRecord | null): Cs
   return {
     id: record.id,
     label: record.name,
+    rowCountSampled: undefined,
+    columnCount: record.previewColumns?.length,
+    numericColumnCount: undefined,
+    categoricalColumnCount: undefined,
     previewColumns: record.previewColumns ?? [],
     previewRows: record.previewRows ?? [],
     previewTruncated: Boolean(record.previewTruncated),
@@ -1957,6 +2172,12 @@ function CsvPreviewTable({ preview }: { preview: CsvPreviewData }) {
   }
   return (
     <div className="mg-csv-mini" aria-label={`CSV table preview for ${preview.label}`}>
+      <div className="mg-csv-summary">
+        {preview.rowCountSampled != null ? <span>{preview.rowCountSampled} sampled rows</span> : null}
+        {preview.columnCount != null ? <span>{preview.columnCount} columns</span> : null}
+        {preview.numericColumnCount != null ? <span>{preview.numericColumnCount} numeric</span> : null}
+        {preview.categoricalColumnCount != null ? <span>{preview.categoricalColumnCount} categorical</span> : null}
+      </div>
       <table className="mg-csv-table">
         <thead>
           <tr>
@@ -2205,7 +2426,7 @@ function folderNodesFromPlotSets(plotSets: PlotSetEntity[], rootLabel: string): 
     return {
       id: path,
       path,
-      label: path === "." ? rootLabel : path.split("/").at(-1) ?? path,
+      label: path === "." ? rootLabel : path.split("/")[path.split("/").length - 1] ?? path,
       parentId,
       depth: path === "." ? 0 : path.split("/").length,
       childCount,

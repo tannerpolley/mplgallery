@@ -1,4 +1,4 @@
-"""Streamlit component bridge and payload helpers for the plot browser."""
+"""Compatibility payload and event helpers for the plot browser."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
-import streamlit as st
-import streamlit.components.v1 as components
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
@@ -33,6 +31,7 @@ from mplgallery.core.user_settings import (
 )
 from mplgallery.updater import install_windows_update
 from mplgallery.ui.root_state import browse_active_root, change_active_root, reset_active_root
+from mplgallery.ui.streamlit_shim import components, st
 
 
 LINESTYLE_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -237,7 +236,7 @@ def process_component_event(
     project_root: Path,
     launch_root: Path | None = None,
 ) -> bool:
-    """Apply a component event. Returns True when Streamlit should rerun."""
+    """Apply a component event. Returns True when callers should refresh state."""
     if event is None or _event_was_processed(event.id):
         return False
 
@@ -269,6 +268,7 @@ def process_component_event(
         return True
 
     if event.type == "refresh_index":
+        _bump_index_revision()
         return True
 
     if event.type == "set_browse_mode" and event.browse_mode:
@@ -323,6 +323,7 @@ def process_component_event(
             _set_plot_error(event.plot_id, str(exc))
         else:
             _clear_plot_error(event.plot_id)
+            _bump_index_revision()
             st.toast("Plot metadata saved.")
         return True
 
@@ -337,6 +338,7 @@ def process_component_event(
             _set_plot_error(event.plot_id, str(exc))
         else:
             _clear_plot_error(event.plot_id)
+            _bump_index_revision()
             st.toast("YAML sidecar saved.")
         return True
 
@@ -346,6 +348,7 @@ def process_component_event(
 
     if event.type == "draft_dataset" and event.dataset_id:
         _draft_datasets_by_id(project_root, [event.dataset_id])
+        _bump_index_revision()
         return True
 
     if event.type == "draft_dataset_with_preferences" and event.dataset_id and event.redraw:
@@ -355,10 +358,12 @@ def process_component_event(
             redraw=event.redraw,
             output_format=event.output_format or "svg",
         )
+        _bump_index_revision()
         return True
 
     if event.type == "draft_checked_datasets" and event.dataset_ids:
         _draft_datasets_by_id(project_root, event.dataset_ids)
+        _bump_index_revision()
         return True
 
     return False
@@ -385,6 +390,10 @@ def _clear_plot_set_ui_state() -> None:
         "mplgallery_selected_folder_path",
     ):
         st.session_state.pop(key, None)
+
+
+def _bump_index_revision() -> None:
+    st.session_state["mplgallery_index_revision"] = int(st.session_state.get("mplgallery_index_revision", 0)) + 1
 
 
 def component_errors() -> dict[str, str]:
@@ -914,13 +923,30 @@ def _file_item_payloads(
 
 
 def _image_data_uri(path: Path) -> str:
-    suffix = path.suffix.lower()
+    signature = _path_stat_signature(path)
+    if signature is None:
+        return ""
+    return _image_data_uri_cached(str(path), path.suffix.lower(), signature[0], signature[1])
+
+
+@st.cache_data(show_spinner=False)
+def _image_data_uri_cached(path: str, suffix: str, size_bytes: int, modified_at_ns: int) -> str:
+    _ = (size_bytes, modified_at_ns)
+    file_path = Path(path)
     if suffix == ".svg":
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
         return f"data:image/svg+xml;base64,{encoded}"
     mime = "image/png" if suffix == ".png" else "application/octet-stream"
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
     return f"data:{mime};base64,{encoded}"
+
+
+def _path_stat_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return int(stat.st_size), int(stat.st_mtime_ns)
 
 
 def _csv_preview(record: PlotRecord) -> str | None:

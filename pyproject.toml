@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mplgallery"
 version = "0.1.6"
-description = "Local-first CSV Plot Studio for drafting and editing Matplotlib plots from analysis tables."
+description = "Local-first desktop gallery for browsing project-owned CSV, PNG, and SVG analysis artifacts."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -13,7 +13,6 @@ authors = [
   { name = "Tanner" }
 ]
 dependencies = [
-  "streamlit>=1.35",
   "numpy>=1.26",
   "pandas>=2.0",
   "matplotlib>=3.8",
@@ -28,7 +27,7 @@ dependencies = [
 dvc = ["dvc>=3.0"]
 mlflow = ["mlflow>=2.0"]
 integrations = ["dvc>=3.0", "mlflow>=2.0"]
-desktop = ["pywebview>=5.4; platform_system == 'Windows'"]
+desktop = []
 
 [dependency-groups]
 dev = [
@@ -38,9 +37,7 @@ dev = [
   "build>=1.2",
   "hatchling>=1.25"
 ]
-windows-dist = [
-  "pyinstaller>=6.11; platform_system == 'Windows'",
-]
+windows-dist = []
 
 [project.scripts]
 mplgallery = "mplgallery.cli:main"

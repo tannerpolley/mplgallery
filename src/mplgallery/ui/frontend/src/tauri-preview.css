@@ -1,0 +1,12 @@
+.mg-tauri-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #f5f7fb;
+  color: #163047;
+  font-family:
+    Inter,
+    "Segoe UI",
+    sans-serif;
+  font-size: 18px;
+}

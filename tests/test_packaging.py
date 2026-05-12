@@ -25,7 +25,7 @@ def test_base_dependencies_keep_dvc_and_mlflow_optional() -> None:
     assert "mlflow" not in dependencies
     assert optional["dvc"] == ["dvc>=3.0"]
     assert optional["mlflow"] == ["mlflow>=2.0"]
-    assert any("pyinstaller>=" in requirement for requirement in dependency_groups["windows-dist"])
+    assert "windows-dist" in dependency_groups
 
 
 def test_package_declares_frontend_dist_and_excludes_node_modules() -> None:
@@ -58,30 +58,35 @@ def test_console_script_and_run_command_expose_root_launcher() -> None:
 
     result = RUNNER.invoke(app, ["run", "--help"])
     assert result.exit_code == 0, result.output
-    assert "Launch the local Streamlit CSV plot studio" in result.output
+    assert "Open the static React browser preview" in result.output
 
     choose_root_result = RUNNER.invoke(app, ["run", "--choose-root", "--help"])
     assert choose_root_result.exit_code == 0, choose_root_result.output
 
 
-def test_desktop_command_exposes_native_window_mode_and_browser_fallback(monkeypatch) -> None:
+def test_desktop_command_exposes_tauri_mode_and_browser_preview(monkeypatch) -> None:
     launch_mock = MagicMock(return_value=0)
-    run_mock = MagicMock(return_value=0)
+    preview_mock = MagicMock(return_value=0)
+    preview_url_mock = MagicMock(return_value="http://127.0.0.1:8765/browser-preview.html")
     monkeypatch.setattr(cli, "launch_desktop_app", launch_mock)
-    monkeypatch.setattr(cli, "_run_streamlit_app", run_mock)
+    monkeypatch.setattr(cli, "launch_browser_preview", preview_mock)
+    monkeypatch.setattr(cli, "prepare_browser_preview", preview_url_mock)
 
     desktop_help = RUNNER.invoke(app, ["desktop", "--help"])
     assert desktop_help.exit_code == 0, desktop_help.output
-    assert "native desktop window" in desktop_help.output.lower()
+    assert "tauri desktop app" in desktop_help.output.lower()
 
     desktop_result = RUNNER.invoke(app, ["desktop", "."])
     assert desktop_result.exit_code == 0, desktop_result.output
     launch_mock.assert_called_once()
 
-    browser_result = RUNNER.invoke(app, ["desktop", ".", "--browser", "--port", "8610"])
+    browser_result = RUNNER.invoke(app, ["desktop", ".", "--browser"])
     assert browser_result.exit_code == 0, browser_result.output
-    run_mock.assert_called_once()
-    assert run_mock.call_args.kwargs["open_browser"] is True
+    preview_mock.assert_called_once()
+
+    preview_url_result = RUNNER.invoke(app, ["preview-url", "."])
+    assert preview_url_result.exit_code == 0, preview_url_result.output
+    assert "http://127.0.0.1:8765/browser-preview.html" in preview_url_result.output
 
 
 def test_windows_dist_build_embeds_app_metadata() -> None:
@@ -91,10 +96,10 @@ def test_windows_dist_build_embeds_app_metadata() -> None:
         encoding="utf-8"
     )
 
-    assert "--icon" in build_script
-    assert "--version-file" in build_script
-    assert "MPLGallery" in build_script
-    assert "mplgallery/assets" in build_script
+    assert "cargo" in build_script
+    assert "npm.cmd" in build_script
+    assert "mplgallery-desktop.exe" in build_script
+    assert "tauri.conf.json" in build_script
     assert "Install MPLGallery.cmd" in build_script
     assert "MPLGallery Setup.exe" in build_script
     assert "run_windows_setup.cmd" in build_script
@@ -103,4 +108,6 @@ def test_windows_dist_build_embeds_app_metadata() -> None:
     assert "Start Menu" in installer_script
     assert "Desktop" in installer_script
     assert "windows-latest" in release_workflow
+    assert "actions/setup-node@v4" in release_workflow
+    assert "dtolnay/rust-toolchain@stable" in release_workflow
     assert "build_windows_dist.py" in release_workflow

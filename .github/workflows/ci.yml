@@ -17,8 +17,25 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Sync dependencies
-        run: uv sync --dev
+        run: uv sync --dev --group windows-dist
+
+      - name: Frontend tests
+        run: npm --prefix src/mplgallery/ui/frontend test
+
+      - name: Frontend build
+        run: npm --prefix src/mplgallery/ui/frontend run build
+
+      - name: Rust desktop check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
 
       - name: Run Python tests
         run: uv run --no-sync pytest

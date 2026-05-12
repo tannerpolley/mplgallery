@@ -71,8 +71,16 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Sync Windows desktop dependencies
-        run: uv sync --extra desktop --group windows-dist
+        run: uv sync --group windows-dist
 
       - name: Run desktop tests
         run: uv run --no-sync pytest tests/test_desktop.py tests/test_packaging.py

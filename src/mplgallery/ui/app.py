@@ -1,4 +1,4 @@
-"""Streamlit application entry point for the local CSV plot studio."""
+"""Legacy compatibility helpers for scan loading and record hydration."""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ import json
 import os
 from importlib.resources import files
 from pathlib import Path
-
-import streamlit as st
 
 from mplgallery.core.user_settings import (
     load_user_settings,
@@ -19,6 +17,7 @@ from mplgallery.core.models import CSVStudioIndex, CacheMetadata, PlotRecord
 from mplgallery.core.renderer import render_cached_plot
 from mplgallery.core.studio import build_csv_studio_index
 from mplgallery.desktop import _desktop_update_payload
+from mplgallery.ui.streamlit_shim import st
 from mplgallery.ui.component import (
     build_component_payload,
     component_errors,
@@ -69,6 +68,7 @@ def main() -> None:
         return
 
     image_library_mode = _active_browse_mode(args.image_library) == "image-library"
+    index_revision = _index_revision()
     if project_root is None:
         records: list[PlotRecord] = []
         datasets = []
@@ -79,12 +79,13 @@ def main() -> None:
                 project_root,
                 include_artifacts=args.include_artifacts,
                 image_library_mode=image_library_mode,
+                revision=index_revision,
             )
-        except Exception as exc:  # pragma: no cover - Streamlit display path
+        except Exception as exc:  # pragma: no cover - compatibility display path
             st.error(f"Unable to scan project: {exc}")
             return
 
-        records = _render_records(project_root, index.records)
+        records = _render_records(project_root, index.records, revision=index_revision)
         datasets = index.datasets
         browse_mode = index.browse_mode
         st.session_state["mplgallery_records"] = records
@@ -230,14 +231,18 @@ def _app_icon_path() -> str:
     return str(files("mplgallery.assets").joinpath("mplgallery-icon.png"))
 
 
+def _index_revision() -> int:
+    return int(st.session_state.setdefault("mplgallery_index_revision", 0))
+
+
 def _load_index(
     project_root: Path,
     *,
     include_artifacts: bool = False,
     image_library_mode: bool = False,
+    revision: int = 0,
 ) -> CSVStudioIndex:
-    fingerprint = _project_fingerprint(project_root)
-    return _load_index_cached(str(project_root), include_artifacts, image_library_mode, fingerprint)
+    return _load_index_cached(str(project_root), include_artifacts, image_library_mode, revision)
 
 
 @st.cache_data(show_spinner=False)
@@ -245,9 +250,9 @@ def _load_index_cached(
     project_root: str,
     include_artifacts: bool,
     image_library_mode: bool,
-    fingerprint: tuple[tuple[str, int, int], ...],
+    revision: int,
 ) -> CSVStudioIndex:
-    _ = fingerprint
+    _ = revision
     return build_csv_studio_index(
         Path(project_root),
         ensure_drafts=False,
@@ -256,22 +261,22 @@ def _load_index_cached(
     )
 
 
-def _render_records(project_root: Path, records: list[PlotRecord]) -> list[PlotRecord]:
+def _render_records(project_root: Path, records: list[PlotRecord], *, revision: int = 0) -> list[PlotRecord]:
     records_json = json.dumps(
         [record.model_dump(mode="json") for record in records],
         sort_keys=True,
         separators=(",", ":"),
     )
-    return _render_records_cached(str(project_root), records_json, _records_fingerprint(records))
+    return _render_records_cached(str(project_root), records_json, revision)
 
 
 @st.cache_data(show_spinner=False)
 def _render_records_cached(
     project_root: str,
     records_json: str,
-    fingerprint: tuple[tuple[str, tuple[str, int, int] | None, tuple[str, int, int] | None, tuple[tuple[str, int, int], ...]], ...],
+    revision: int,
 ) -> list[PlotRecord]:
-    _ = fingerprint
+    _ = revision
     root = Path(project_root)
     records = [PlotRecord.model_validate(item) for item in json.loads(records_json)]
     rendered: list[PlotRecord] = []

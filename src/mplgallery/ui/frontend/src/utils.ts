@@ -92,7 +92,7 @@ export function buildTree(files: FileItem[], rootLabel: string): TreeNode {
 export function projectRootName(rootPath: string): string {
   const normalized = rootPath.replace(/\\/g, "/").replace(/\/+$/, "");
   const parts = normalized.split("/").filter(Boolean);
-  return parts.at(-1) ?? "Project root";
+  return parts[parts.length - 1] ?? "Project root";
 }
 
 export function filterRecords(

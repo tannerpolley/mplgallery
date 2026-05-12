@@ -1,0 +1,223 @@
+import type { TauriBootstrap, TauriScanResult } from "./tauri-types";
+
+export const mockBootstrap: TauriBootstrap = {
+  appInfo: {
+    name: "MPLGallery",
+    version: "0.2.0-preview",
+    appId: "com.mplgallery.desktop",
+    canInstallUpdates: false,
+    update: {
+      checked: true,
+      available: false,
+      currentVersion: "0.2.0-preview",
+      latestVersion: "0.2.0-preview",
+      error: null,
+    },
+  },
+  userSettings: {
+    rememberRecentProjects: true,
+    restoreLastProjectOnStartup: false,
+  },
+  rootContext: {
+    activeRoot: "C:/Users/Tanner/Documents/git/mplgallery/examples",
+    recentRoots: [
+      "C:/Users/Tanner/Documents/git/mplgallery/examples",
+      "C:/Users/Tanner/Documents/git/ePC-SAFT/analyses",
+    ],
+    error: null,
+  },
+};
+
+export const mockScanResult: TauriScanResult = {
+  rootPath: "C:/Users/Tanner/Documents/git/mplgallery/examples",
+  browseMode: "plot-set-manager",
+  ignoredDirCount: 4,
+  warnings: [
+    "Mock data only in this first Tauri slice. Scanner and file hydration will replace this payload in the next worker tasks.",
+  ],
+  folderTree: [
+    {
+      id: "results",
+      label: "results",
+      path: "results",
+      childCount: 2,
+      assetCount: 7,
+      children: [
+        {
+          id: "results/response_curve",
+          label: "response_curve",
+          path: "results/response_curve",
+          childCount: 0,
+          assetCount: 3,
+          children: [],
+        },
+        {
+          id: "results/residual_panel",
+          label: "residual_panel",
+          path: "results/residual_panel",
+          childCount: 0,
+          assetCount: 4,
+          children: [],
+        },
+      ],
+    },
+    {
+      id: "references",
+      label: "references",
+      path: "references",
+      childCount: 1,
+      assetCount: 2,
+      children: [
+        {
+          id: "references/screenshots",
+          label: "screenshots",
+          path: "references/screenshots",
+          childCount: 0,
+          assetCount: 2,
+          children: [],
+        },
+      ],
+    },
+  ],
+  fileRows: [
+    {
+      id: "plotset-response-curve",
+      title: "Response curve",
+      folderPath: "results/response_curve",
+      classification: "analysis-linked",
+      attachmentKinds: ["csv", "svg", "png"],
+    },
+    {
+      id: "plotset-residual-panel",
+      title: "Residual panel",
+      folderPath: "results/residual_panel",
+      classification: "analysis-linked",
+      attachmentKinds: ["csv", "svg"],
+    },
+    {
+      id: "loose-overview",
+      title: "Plant overview",
+      folderPath: "references/screenshots",
+      classification: "loose-image",
+      attachmentKinds: ["png"],
+    },
+  ],
+  datasets: [
+    {
+      id: "dataset-response-curve",
+      displayName: "response_curve.csv",
+      relativePath: "results/response_curve/response_curve.csv",
+      folderPath: "results/response_curve",
+      rowCountSampled: 120,
+      columns: ["time_s", "signal", "reference"],
+      numericColumns: ["time_s", "signal", "reference"],
+      categoricalColumns: [],
+      previewColumns: ["time_s", "signal", "reference"],
+      previewRows: [
+        { time_s: "0.0", signal: "1.2", reference: "1.1" },
+        { time_s: "1.0", signal: "1.8", reference: "1.7" },
+      ],
+      previewTruncated: true,
+      linkedImageIds: ["asset-response-svg", "asset-response-png"],
+    },
+    {
+      id: "dataset-residual-panel",
+      displayName: "residual_panel.csv",
+      relativePath: "results/residual_panel/residual_panel.csv",
+      folderPath: "results/residual_panel",
+      rowCountSampled: 48,
+      columns: ["sample", "residual", "group"],
+      numericColumns: ["sample", "residual"],
+      categoricalColumns: ["group"],
+      previewColumns: ["sample", "residual", "group"],
+      previewRows: [
+        { sample: "1", residual: "-0.12", group: "A" },
+        { sample: "2", residual: "0.07", group: "B" },
+      ],
+      previewTruncated: true,
+      linkedImageIds: ["asset-residual-svg"],
+    },
+  ],
+  plotSets: [
+    {
+      id: "plotset-response-curve",
+      title: "Response curve",
+      folderPath: "results/response_curve",
+      classification: "analysis-linked",
+      preferredFigureId: "asset-response-svg",
+      renderStatus: "ready",
+      attachments: [
+        {
+          id: "asset-response-csv",
+          relativePath: "results/response_curve/response_curve.csv",
+          kind: "csv",
+          sizeBytes: 14820,
+          modifiedAt: "2026-05-11T10:00:00Z",
+        },
+        {
+          id: "asset-response-svg",
+          relativePath: "results/response_curve/response_curve.svg",
+          kind: "svg",
+          sizeBytes: 28412,
+          modifiedAt: "2026-05-11T10:00:06Z",
+          widthPx: 960,
+          heightPx: 640,
+        },
+        {
+          id: "asset-response-png",
+          relativePath: "results/response_curve/response_curve.png",
+          kind: "png",
+          sizeBytes: 93740,
+          modifiedAt: "2026-05-11T10:00:06Z",
+          widthPx: 960,
+          heightPx: 640,
+        },
+      ],
+    },
+    {
+      id: "plotset-residual-panel",
+      title: "Residual panel",
+      folderPath: "results/residual_panel",
+      classification: "analysis-linked",
+      preferredFigureId: "asset-residual-svg",
+      renderStatus: "ready",
+      attachments: [
+        {
+          id: "asset-residual-csv",
+          relativePath: "results/residual_panel/residual_panel.csv",
+          kind: "csv",
+          sizeBytes: 9120,
+          modifiedAt: "2026-05-11T10:05:00Z",
+        },
+        {
+          id: "asset-residual-svg",
+          relativePath: "results/residual_panel/residual_panel.svg",
+          kind: "svg",
+          sizeBytes: 22210,
+          modifiedAt: "2026-05-11T10:05:08Z",
+          widthPx: 1200,
+          heightPx: 720,
+        },
+      ],
+    },
+  ],
+  looseImages: [
+    {
+      id: "loose-overview",
+      title: "Plant overview",
+      folderPath: "references/screenshots",
+      classification: "loose-image",
+      siblingCsvIds: [],
+      imageFormat: "PNG",
+      image: {
+        id: "asset-overview-png",
+        relativePath: "references/screenshots/plant_overview.png",
+        kind: "png",
+        sizeBytes: 182200,
+        modifiedAt: "2026-05-10T18:20:00Z",
+        widthPx: 1440,
+        heightPx: 900,
+      },
+    },
+  ],
+};
