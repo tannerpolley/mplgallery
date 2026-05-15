@@ -75,7 +75,10 @@ def _build_frontend() -> None:
 
 
 def _build_tauri_release() -> Path:
-    _run(["cargo", "build", "--manifest-path", str(TAURI_ROOT / "Cargo.toml"), "--release"], cwd=REPO_ROOT)
+    tauri_cli = FRONTEND_ROOT / "node_modules" / ".bin" / "tauri.cmd"
+    if not tauri_cli.exists():
+        raise RuntimeError(f"Tauri CLI was not installed: {tauri_cli}")
+    _run([str(tauri_cli), "build", "--config", str(TAURI_CONF)], cwd=REPO_ROOT)
     exe_path = TAURI_TARGET / TAURI_EXE_NAME
     if not exe_path.exists():
         raise RuntimeError(f"Expected Tauri executable was not created: {exe_path}")

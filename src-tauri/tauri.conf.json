@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "MPLGallery",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "identifier": "com.mplgallery.desktop",
   "build": {
-    "beforeDevCommand": "npm --prefix ../src/mplgallery/ui/frontend run dev -- --host 127.0.0.1 --port 1420",
+    "beforeDevCommand": "npm --prefix src/mplgallery/ui/frontend run dev -- --host 127.0.0.1 --port 1420",
     "devUrl": "http://127.0.0.1:1420/tauri.html",
-    "beforeBuildCommand": "npm --prefix ../src/mplgallery/ui/frontend run build",
+    "beforeBuildCommand": "npm --prefix src/mplgallery/ui/frontend run build",
     "frontendDist": "../src/mplgallery/ui/frontend/dist"
   },
   "app": {

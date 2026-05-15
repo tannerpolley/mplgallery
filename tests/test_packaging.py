@@ -96,7 +96,9 @@ def test_windows_dist_build_embeds_app_metadata() -> None:
         encoding="utf-8"
     )
 
-    assert "cargo" in build_script
+    assert "tauri.cmd" in build_script
+    assert '"build", "--config"' in build_script
+    assert "cargo\", \"build\"" not in build_script
     assert "npm.cmd" in build_script
     assert "mplgallery-desktop.exe" in build_script
     assert "tauri.conf.json" in build_script
