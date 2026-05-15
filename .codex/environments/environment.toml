@@ -17,6 +17,10 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     throw "npm is required for the React frontend component. Install Node.js/npm, then rerun setup."
 }
 
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    throw "Rust/Cargo is required to build the Windows desktop app. Install Rust, then rerun setup."
+}
+
 uv sync --dev
 npm --prefix src/mplgallery/ui/frontend install
 '''
@@ -24,11 +28,17 @@ npm --prefix src/mplgallery/ui/frontend install
 [[actions]]
 name = "Open Desktop App"
 icon = "run"
-command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 desktop-examples"
+command = "pwsh.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 desktop-examples"
 platform = "win32"
 
 [[actions]]
 name = "Open Browser Preview"
 icon = "run"
-command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 preview-url-examples"
+command = "pwsh.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 preview-url-examples"
+platform = "win32"
+
+[[actions]]
+name = "Build Windows App"
+icon = "build"
+command = "pwsh.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 windows-dist"
 platform = "win32"

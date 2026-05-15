@@ -17,6 +17,7 @@ param(
         "frontend-test",
         "frontend-build",
         "build",
+        "windows-dist",
         "wheel-smoke"
     )]
     [string] $Action = "help",
@@ -87,6 +88,7 @@ Frontend actions:
 
 Packaging actions:
   build            uv run --no-sync python -m build
+  windows-dist     build frontend, Tauri executable, setup EXE, Windows ZIP, and build report
   wheel-smoke      build wheel, install it in .wheel-smoke-venv, scan install_smoke_project
 
 Examples:
@@ -146,6 +148,9 @@ switch ($Action) {
     }
     "build" {
         Invoke-Repo @("uv", "run", "--no-sync", "python", "-m", "build")
+    }
+    "windows-dist" {
+        Invoke-Repo @("uv", "run", "--no-sync", "python", "scripts\build_windows_dist.py")
     }
     "wheel-smoke" {
         Invoke-Repo @("uv", "run", "--no-sync", "python", "-m", "build")
