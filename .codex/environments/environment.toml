@@ -28,7 +28,7 @@ npm --prefix src/mplgallery/ui/frontend install
 [[actions]]
 name = "Open Desktop App"
 icon = "run"
-command = "pwsh.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 desktop-examples"
+command = "pwsh.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 desktop-app-examples"
 platform = "win32"
 
 [[actions]]

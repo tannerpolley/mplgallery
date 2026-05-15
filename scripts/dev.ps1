@@ -9,6 +9,8 @@ param(
         "preview-url-examples",
         "desktop",
         "desktop-examples",
+        "desktop-app",
+        "desktop-app-examples",
         "scan",
         "test",
         "lint",
@@ -76,6 +78,9 @@ Core actions:
                    uv run mplgallery preview-url examples (prints localhost preview URL)
   desktop          uv run mplgallery desktop <project>
   desktop-examples uv run mplgallery desktop examples
+  desktop-app      ensure dist\windows\mplgallery-desktop.exe exists, then launch it for <project>
+  desktop-app-examples
+                   ensure the Windows app exists, then launch it for examples
   scan             uv run mplgallery scan <project>
   test             uv run pytest
   lint             uv run ruff check .
@@ -97,6 +102,25 @@ Examples:
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 scan examples\sample_project
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 check
 "@
+}
+
+function Start-WindowsDesktopApp {
+    param([string] $ProjectPath)
+
+    $DesktopExe = Join-Path $RepoRoot "dist\windows\mplgallery-desktop.exe"
+    if (!(Test-Path -LiteralPath $DesktopExe)) {
+        Invoke-Repo @("uv", "run", "--no-sync", "python", "scripts\build_windows_dist.py")
+    }
+    if (!(Test-Path -LiteralPath $DesktopExe)) {
+        throw "Windows desktop executable was not created: $DesktopExe"
+    }
+
+    if ($ProjectPath -ne "examples") {
+        throw "desktop-app currently supports the examples project. Use preview-url for arbitrary project paths."
+    }
+
+    Start-Process -FilePath "explorer.exe" -ArgumentList @($DesktopExe) -WindowStyle Normal
+    "Started MPLGallery desktop app"
 }
 
 switch ($Action) {
@@ -123,6 +147,12 @@ switch ($Action) {
     }
     "desktop-examples" {
         Invoke-Repo @("uv", "run", "mplgallery", "desktop", "examples")
+    }
+    "desktop-app" {
+        Start-WindowsDesktopApp $Project
+    }
+    "desktop-app-examples" {
+        Start-WindowsDesktopApp "examples"
     }
     "scan" {
         Invoke-Repo @("uv", "run", "mplgallery", "scan", $Project)
