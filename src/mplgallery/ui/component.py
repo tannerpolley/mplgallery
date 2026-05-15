@@ -152,6 +152,7 @@ def build_component_payload(
     root_error: str | None = None,
     show_root_chooser: bool = False,
     hydrated_plot_set_ids: set[str] | None = None,
+    image_src_by_plot_id: dict[str, str] | None = None,
     app_info: dict[str, Any] | None = None,
     user_settings: UserSettings | None = None,
 ) -> dict[str, Any]:
@@ -208,7 +209,11 @@ def build_component_payload(
         "folderView": folder_view,
         "filesView": files_view,
         "records": [
-            _record_payload(record, include_heavy=record.plot_id in hydrated_plot_ids)
+            _record_payload(
+                record,
+                include_heavy=record.plot_id in hydrated_plot_ids,
+                image_src_override=(image_src_by_plot_id or {}).get(record.plot_id),
+            )
             for record in records
         ],
         "files": _file_item_payloads(project_root, records, datasets or []),
@@ -420,12 +425,17 @@ def _hydrated_source_ids(
     return dataset_ids, plot_ids
 
 
-def _record_payload(record: PlotRecord, *, include_heavy: bool = True) -> dict[str, Any]:
+def _record_payload(
+    record: PlotRecord,
+    *,
+    include_heavy: bool = True,
+    image_src_override: str | None = None,
+) -> dict[str, Any]:
     source_csv = record.plot_csv or record.csv
     redraw = record.redraw or RedrawMetadata()
     if include_heavy:
         preview_columns, preview_rows, preview_truncated, preview_error = _record_preview(record)
-        image_src = _image_data_uri(
+        image_src = image_src_override or _image_data_uri(
             record.cache.cache_path if record.cache and record.cache.cache_path else record.image.path
         )
         csv_preview = _csv_preview(record)
@@ -436,7 +446,7 @@ def _record_payload(record: PlotRecord, *, include_heavy: bool = True) -> dict[s
         preview_rows = []
         preview_truncated = False
         preview_error = None
-        image_src = None
+        image_src = image_src_override
         csv_preview = None
         axis_defaults = {"x": None, "y": None, "subplots": {}}
         series = record.redraw.series if record.redraw else []

@@ -330,9 +330,7 @@ def _architecture_result_artifact_records(project_root: Path) -> list[PlotRecord
     records: list[PlotRecord] = []
     manifest_records = _manifest_records_by_absolute_plot(project_root)
     for figures_dir in _architecture_result_figure_dirs(project_root):
-        for path in sorted(figures_dir.rglob("*"), key=lambda item: item.relative_to(project_root).as_posix().lower()):
-            if not path.is_file() or path.suffix.lower() not in {".png", ".svg"}:
-                continue
+        for path in _iter_supported_files(figures_dir, project_root, suffixes={".png", ".svg"}):
             if "mplgallery" in {part.lower() for part in path.relative_to(figures_dir).parts[:-1]}:
                 continue
             image = _discovered_file(path, project_root, FileKind.IMAGE)
@@ -644,9 +642,7 @@ def _direct_csvs(directory: Path) -> list[Path]:
 
 def _csvs_for_root(directory: Path) -> list[Path]:
     csvs: list[Path] = []
-    for path in directory.rglob("*.csv"):
-        if not path.is_file():
-            continue
+    for path in _iter_supported_files(directory, directory, suffixes={".csv"}):
         local_parts = {part.lower() for part in path.relative_to(directory).parts}
         if "raw" in local_parts:
             continue
@@ -676,16 +672,36 @@ def _path_has_suffix_parts(path: Path, root: Path, suffix_parts: tuple[str, ...]
 
 def _walk_candidate_directories(root: Path) -> list[Path]:
     directories: list[Path] = []
-    stack = [root]
-    while stack:
-        directory = stack.pop()
+    for current_root, dir_names, _ in os.walk(root):
+        directory = Path(current_root)
         if _is_ignored_directory(directory, root):
+            dir_names[:] = []
             continue
         directories.append(directory)
-        for child in sorted((item for item in directory.iterdir() if item.is_dir()), reverse=True):
-            if not _is_ignored_directory(child, root):
-                stack.append(child)
+        dir_names[:] = sorted(
+            (name for name in dir_names if not _is_ignored_directory(directory / name, root)),
+            reverse=True,
+        )
     return directories
+
+
+def _iter_supported_files(root: Path, project_root: Path, *, suffixes: set[str]) -> list[Path]:
+    files: list[Path] = []
+    for current_root, dir_names, file_names in os.walk(root):
+        directory = Path(current_root)
+        if _is_ignored_directory(directory, project_root):
+            dir_names[:] = []
+            continue
+        dir_names[:] = [
+            name
+            for name in dir_names
+            if not _is_ignored_directory(directory / name, project_root)
+        ]
+        for file_name in file_names:
+            path = directory / file_name
+            if path.suffix.lower() in suffixes:
+                files.append(path)
+    return sorted(files, key=lambda path: path.relative_to(project_root).as_posix().lower())
 
 
 def _is_ignored_directory(directory: Path, project_root: Path) -> bool:
@@ -699,14 +715,16 @@ def _is_ignored_directory(directory: Path, project_root: Path) -> bool:
 
 def _count_ignored_directories(root: Path) -> int:
     count = 0
-    stack = [root]
-    while stack:
-        directory = stack.pop()
-        for child in (item for item in directory.iterdir() if item.is_dir()):
+    for current_root, dir_names, _ in os.walk(root):
+        directory = Path(current_root)
+        kept: list[str] = []
+        for name in dir_names:
+            child = directory / name
             if _is_ignored_directory(child, root):
                 count += 1
             else:
-                stack.append(child)
+                kept.append(name)
+        dir_names[:] = kept
     return count
 
 
@@ -767,10 +785,11 @@ def _resolved_manifest_path(manifest_root: Path, path: Path | None) -> Path | No
 
 def _manifest_records_by_absolute_plot(project_root: Path) -> dict[Path, tuple[Path, ManifestRecord]]:
     matches: dict[Path, tuple[Path, ManifestRecord]] = {}
-    for manifest_path in project_root.rglob(".mplgallery/manifest.yaml"):
-        manifest_root = manifest_path.parent.parent
-        if _is_ignored_directory(manifest_root, project_root):
+    for directory in _walk_candidate_directories(project_root):
+        manifest_path = directory / ".mplgallery" / "manifest.yaml"
+        if not manifest_path.exists():
             continue
+        manifest_root = directory
         manifest = load_manifest(manifest_root)
         for record in manifest.records:
             plot_path = _resolved_manifest_path(manifest_root, record.plot_path)

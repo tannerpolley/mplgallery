@@ -32,6 +32,18 @@ def test_scan_project_discovers_png_svg_and_csv_with_relative_paths(tmp_path: Pa
     assert discovered["plots/experiment_001.png"].kind is FileKind.IMAGE
 
 
+def test_scan_project_can_skip_image_metadata_for_fast_loads(tmp_path: Path) -> None:
+    touch(tmp_path / "plots" / "experiment_001.png")
+
+    result = scan_project(tmp_path, read_image_metadata=False)
+
+    image = result.files[0]
+    assert image.relative_path.as_posix() == "plots/experiment_001.png"
+    assert image.image_format == "PNG"
+    assert image.width_px is None
+    assert image.height_px is None
+
+
 def test_scan_project_ignores_default_runtime_directories(tmp_path: Path) -> None:
     touch(tmp_path / "plots" / "kept.png")
     touch(tmp_path / ".git" / "hidden.png")

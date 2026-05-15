@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -163,9 +164,7 @@ def apply_mpl_yaml(ax: Any, path: Path | str | PlotSetSidecar) -> PlotSetSidecar
 
 def _results_roots(root: Path) -> list[Path]:
     roots: list[Path] = []
-    for directory in [root, *root.rglob("*")]:
-        if not directory.is_dir():
-            continue
+    for directory in _walk_directories(root):
         if directory.name != RESULTS_DIR_NAME:
             continue
         if _has_ignored_part(directory.relative_to(root)):
@@ -176,18 +175,35 @@ def _results_roots(root: Path) -> list[Path]:
 
 def _iter_plot_set_files(results_root: Path) -> list[Path]:
     files: list[Path] = []
-    for path in results_root.rglob("*"):
-        if not path.is_file():
+    for current_root, dir_names, file_names in os.walk(results_root):
+        current = Path(current_root)
+        relative_dir = current.relative_to(results_root)
+        dir_names[:] = [
+            name
+            for name in dir_names
+            if name.lower() not in LEGACY_RESULTS_SUBTREES and not _has_ignored_part(relative_dir / name)
+        ]
+        if _has_ignored_part(relative_dir):
             continue
-        relative = path.relative_to(results_root)
-        if relative.parts and relative.parts[0].lower() in LEGACY_RESULTS_SUBTREES:
-            continue
-        if _has_ignored_part(relative):
-            continue
-        suffix = path.suffix.lower()
-        if suffix in PLOT_SET_FIGURE_SUFFIXES or suffix in PLOT_SET_DATA_SUFFIXES or suffix in PLOT_SET_METADATA_SUFFIXES:
-            files.append(path)
+        for file_name in file_names:
+            path = current / file_name
+            suffix = path.suffix.lower()
+            if suffix in PLOT_SET_FIGURE_SUFFIXES or suffix in PLOT_SET_DATA_SUFFIXES or suffix in PLOT_SET_METADATA_SUFFIXES:
+                files.append(path)
     return files
+
+
+def _walk_directories(root: Path) -> list[Path]:
+    directories: list[Path] = []
+    for current_root, dir_names, _ in os.walk(root):
+        directory = Path(current_root)
+        relative = directory.relative_to(root)
+        if _has_ignored_part(relative):
+            dir_names[:] = []
+            continue
+        directories.append(directory)
+        dir_names[:] = [name for name in dir_names if not _has_ignored_part(relative / name)]
+    return directories
 
 
 def _first_sidecar(files: list[Path]) -> Path | None:
@@ -211,7 +227,7 @@ def _list_field(value: Any) -> list[str]:
 
 
 def _has_ignored_part(path: Path) -> bool:
-    return any(part in PLOT_SET_IGNORE_DIRS for part in path.parts)
+    return any(part.lower() in PLOT_SET_IGNORE_DIRS for part in path.parts)
 
 
 def _relative_to(path: Path, root: Path) -> Path:

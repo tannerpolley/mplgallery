@@ -1181,6 +1181,36 @@ summary:focus-visible {
   color: var(--mg-accent);
 }
 
+.mg-browser-preview-shell {
+  min-height: 100vh;
+}
+
+.mg-browser-preview-status,
+.mg-browser-preview-error {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 80;
+  max-width: min(360px, calc(100vw - 32px));
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 12px 28px rgb(15 31 48 / 16%);
+}
+
+.mg-browser-preview-status {
+  border: 1px solid #b7d3dc;
+  background: #f1f8fb;
+  color: #1f6477;
+}
+
+.mg-browser-preview-error {
+  border: 1px solid #edc3c3;
+  background: #fff5f5;
+  color: #a53838;
+}
+
 .mg-settings-control {
   position: relative;
   flex: 0 0 auto;

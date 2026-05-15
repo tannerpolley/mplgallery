@@ -275,7 +275,28 @@ describe("App explorer", () => {
     expect(emitEventMock).toHaveBeenLastCalledWith(expect.objectContaining({
       id: expect.any(String),
       type: "refresh_index",
+      root_path: "C:/Users/Tanner/Documents/git/mplgallery",
     }));
+  });
+
+  it("uses the project path chooser when native folder dialogs are unavailable", () => {
+    render(
+      <App
+        payload={payload()}
+        host={{
+          ...host,
+          capabilities: {
+            supportsBrowseDialog: false,
+          },
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Project..." }));
+    const rootMenu = screen.getByRole("dialog", { name: "Project root menu" });
+    expect(rootMenu).toBeInTheDocument();
+    expect(within(rootMenu).getByLabelText("Project path")).toHaveFocus();
+    expect(emitEventMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: "browse_project_root" }));
   });
 
   it("prompts for available desktop app updates", () => {
@@ -437,6 +458,7 @@ describe("App explorer", () => {
     renderApp(payload());
 
     const filterToolbar = screen.getByRole("toolbar", { name: "File type filters" });
+    expect(within(filterToolbar).queryByRole("button", { name: "Missing" })).not.toBeInTheDocument();
     fireEvent.click(within(filterToolbar).getByRole("button", { name: "SVG" }));
     expect(within(filesPane()).getByText("alpha.csv")).toBeInTheDocument();
     expect(within(filesPane()).getAllByText("SVG").length).toBeGreaterThan(0);

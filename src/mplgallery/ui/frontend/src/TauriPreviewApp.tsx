@@ -85,8 +85,20 @@ export default function TauriPreviewApp() {
             setBrowseModeOverride(event.browse_mode);
             return;
           case "refresh_index": {
-            const nextScan = await loadScanResult(bootstrap.rootContext.activeRoot);
+            const activeRoot = scan.rootPath || bootstrap.rootContext.activeRoot;
+            const nextScan = await loadScanResult(activeRoot);
             setScan(nextScan);
+            setBootstrap((current) =>
+              current
+                ? {
+                  ...current,
+                  rootContext: {
+                    ...current.rootContext,
+                    activeRoot: nextScan.rootPath || activeRoot,
+                    error: null,
+                  },
+                }
+                : current);
             return;
           }
           case "change_project_root": {

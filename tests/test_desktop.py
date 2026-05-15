@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import socket
 from pathlib import Path
 
 import mplgallery.desktop as desktop
+from mplgallery.preview_server import IdlePreviewServer
 
 
 def test_tauri_command_prefers_cargo_for_repo_runs(monkeypatch, tmp_path: Path) -> None:
@@ -113,7 +115,7 @@ def test_launch_browser_preview_opens_localhost_url(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(
         desktop,
         "_start_browser_preview_server",
-        lambda preview_root, preview_name: f"http://127.0.0.1:9988/{preview_name}",
+        lambda preview_root, preview_name, project_root, include_artifacts, image_library: f"http://127.0.0.1:9988/{preview_name}",
     )
 
     result = desktop.launch_browser_preview(tmp_path / "examples")
@@ -136,9 +138,24 @@ def test_prepare_browser_preview_returns_localhost_url(tmp_path: Path, monkeypat
     monkeypatch.setattr(
         desktop,
         "_start_browser_preview_server",
-        lambda preview_root, preview_name: f"http://127.0.0.1:8765/{preview_name}",
+        lambda preview_root, preview_name, project_root, include_artifacts, image_library: f"http://127.0.0.1:8765/{preview_name}",
     )
 
     result = desktop.prepare_browser_preview(tmp_path / "examples")
 
     assert result == "http://127.0.0.1:8765/browser-preview.html"
+
+
+def test_find_open_port_skips_occupied_preferred_port() -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        occupied.listen()
+        preferred = int(occupied.getsockname()[1])
+
+        selected = desktop._find_open_port(preferred=preferred)
+
+    assert selected != preferred
+
+
+def test_preview_server_disallows_duplicate_port_reuse() -> None:
+    assert IdlePreviewServer.allow_reuse_address is False

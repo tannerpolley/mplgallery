@@ -78,7 +78,7 @@ type CsvPreviewData = {
   previewError?: string | null;
 };
 
-type FileFilter = "csv" | "svg" | "png" | "missing";
+type FileFilter = "csv" | "svg" | "png";
 type GalleryLayoutMode = "grid" | "rows" | "columns";
 type CustomSet = {
   id: string;
@@ -90,7 +90,6 @@ const FILE_FILTERS: Array<{ value: FileFilter; label: string; title: string }> =
   { value: "csv", label: "CSV", title: "Show plot sets with CSV files" },
   { value: "svg", label: "SVG", title: "Show plot sets with SVG figures" },
   { value: "png", label: "PNG", title: "Show plot sets with PNG figures" },
-  { value: "missing", label: "Missing", title: "Show CSV files that do not have figures yet" },
 ];
 
 const emptyPayload: BrowserPayload = {
@@ -227,6 +226,7 @@ function App(props: StreamlitProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [rootDraft, setRootDraft] = useState(rootContext.activeRoot);
+  const rootPathInputRef = useRef<HTMLInputElement | null>(null);
   const [galleryLayout, setGalleryLayout] = useState<GalleryLayoutMode>("grid");
   const [checkedPlotSetOrder, setCheckedPlotSetOrder] = useState<string[]>([]);
   const [draggingPlotSetId, setDraggingPlotSetId] = useState<string | null>(null);
@@ -281,6 +281,13 @@ function App(props: StreamlitProps) {
     setCustomSetDraft("");
     setShowCustomSetComposer(false);
   }, [rootContext.activeRoot, payload.selectedPlotId, payload.folderView?.defaultSelectedPath]);
+
+  useEffect(() => {
+    if (!rootMenuOpen) return;
+    if (browseDialogEnabled) return;
+    rootPathInputRef.current?.focus();
+    rootPathInputRef.current?.select();
+  }, [browseDialogEnabled, rootMenuOpen]);
 
   useEffect(() => {
     setCheckedPlotIds((current) => reconcileCheckedPlotIds(payload.records, current, hasUserFilter));
@@ -719,6 +726,7 @@ function App(props: StreamlitProps) {
   }
 
   function changeProjectRoot(rootPath: string) {
+    setRootMenuOpen(false);
     emitEvent({
       id: eventId("change_project_root"),
       type: "change_project_root",
@@ -727,6 +735,11 @@ function App(props: StreamlitProps) {
   }
 
   function browseProjectRoot() {
+    if (!browseDialogEnabled) {
+      setRootDraft(rootContext.activeRoot || rootContext.launchRoot || "");
+      setRootMenuOpen(true);
+      return;
+    }
     emitEvent({
       id: eventId("browse_project_root"),
       type: "browse_project_root",
@@ -734,6 +747,7 @@ function App(props: StreamlitProps) {
   }
 
   function resetProjectRoot() {
+    setRootMenuOpen(false);
     emitEvent({
       id: eventId("reset_project_root"),
       type: "reset_project_root",
@@ -783,6 +797,7 @@ function App(props: StreamlitProps) {
     emitEvent({
       id: eventId("refresh_index"),
       type: "refresh_index",
+      root_path: rootContext.activeRoot,
     });
   }
 
@@ -883,14 +898,14 @@ function App(props: StreamlitProps) {
             <div className="mg-root-popover" role="dialog" aria-label="Project root menu">
               <label>
                 Project path
-                <input value={rootDraft} onChange={(event) => setRootDraft(event.target.value)} />
+                <input ref={rootPathInputRef} value={rootDraft} onChange={(event) => setRootDraft(event.target.value)} />
               </label>
               {rootContext.error ? <div className="mg-root-error">{rootContext.error}</div> : null}
               <div className="mg-root-actions">
                 <button type="button" onClick={() => changeProjectRoot(rootDraft)}>
                   Open root
                 </button>
-                <button type="button" onClick={browseProjectRoot} disabled={!browseDialogEnabled}>
+                <button type="button" onClick={browseProjectRoot}>
                   Open Project...
                 </button>
                 <button type="button" onClick={resetProjectRoot} disabled={!rootResetEnabled}>
@@ -918,7 +933,7 @@ function App(props: StreamlitProps) {
             </div>
           ) : null}
         </div>
-        <button type="button" className="mg-appbar-button" onClick={browseProjectRoot} disabled={!browseDialogEnabled}>
+        <button type="button" className="mg-appbar-button" onClick={browseProjectRoot}>
           <FolderOpen aria-hidden="true" size={16} />
           Open Project...
         </button>
@@ -1053,7 +1068,7 @@ function App(props: StreamlitProps) {
             <h1>No project open</h1>
             <p>Open a project folder to start browsing plots and images.</p>
             {rootContext.error ? <div className="mg-root-error">{rootContext.error}</div> : null}
-            <button type="button" className="mg-appbar-button" onClick={browseProjectRoot} disabled={!browseDialogEnabled}>
+            <button type="button" className="mg-appbar-button" onClick={browseProjectRoot}>
               <FolderOpen aria-hidden="true" size={16} />
               Open Project...
             </button>
@@ -1408,7 +1423,6 @@ function itemMatchesFilters(item: DataPlotItem, fileFilters: Set<FileFilter>): b
     if (fileFilter === "csv") return Boolean(item.dataset);
     if (fileFilter === "svg") return item.records.some((record) => record.kind.toLowerCase() === "svg");
     if (fileFilter === "png") return item.records.some((record) => record.kind.toLowerCase() === "png");
-    if (fileFilter === "missing") return Boolean(item.dataset && item.records.length === 0);
     return false;
   });
 }
@@ -1452,7 +1466,6 @@ function plotSetMatchesFilters(plotSet: PlotSetEntity, fileFilters: Set<FileFilt
     if (fileFilter === "csv") return types.has("csv");
     if (fileFilter === "svg") return types.has("svg");
     if (fileFilter === "png") return types.has("png");
-    if (fileFilter === "missing") return types.has("csv") && !types.has("svg") && !types.has("png");
     return false;
   });
 }
@@ -1472,9 +1485,6 @@ function fileMatchesFilter(
     if (fileFilter === "csv") return file.kind === "csv";
     if (fileFilter === "svg") return file.kind === "image" && suffix === "svg";
     if (fileFilter === "png") return file.kind === "image" && suffix === "png";
-    if (fileFilter === "missing") {
-      return file.kind === "csv" && Boolean(file.datasetId && !(recordsByDatasetId.get(file.datasetId)?.length));
-    }
     return false;
   });
 }

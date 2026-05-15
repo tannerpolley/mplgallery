@@ -10,8 +10,10 @@ import sys
 import time
 import webbrowser
 from pathlib import Path
+from urllib.parse import quote
 
 from mplgallery import __version__
+from mplgallery.core.user_settings import UserSettings, load_user_settings
 
 
 APP_NAME = "MPLGallery"
@@ -72,7 +74,14 @@ def prepare_browser_preview(
         include_artifacts=include_artifacts,
         image_library=image_library,
     )
-    return _start_browser_preview_server(preview_path.parent, preview_path.name)
+    active_root = (project_root or (REPO_ROOT / "examples")).expanduser().resolve()
+    return _start_browser_preview_server(
+        preview_path.parent,
+        preview_path.name,
+        project_root=active_root,
+        include_artifacts=include_artifacts,
+        image_library=image_library,
+    )
 
 
 def gui_main() -> None:
@@ -216,40 +225,91 @@ def _browser_preview_payload(
     include_artifacts: bool,
     image_library: bool,
 ) -> dict[str, object]:
-    from mplgallery.core.studio import build_csv_studio_index
-    from mplgallery.core.user_settings import load_user_settings
-    from mplgallery.ui.component import _plot_set_payloads, build_component_payload
-
-    settings = load_user_settings()
-    index = build_csv_studio_index(
+    return build_browser_preview_payload_for_root(
         project_root,
+        launch_root=project_root,
         include_artifacts=include_artifacts,
-        image_library_mode=image_library,
+        image_library=image_library,
     )
-    hydrated_plot_set_ids = {
-        str(plot_set["plotSetId"])
-        for plot_set in _plot_set_payloads(index.records, index.datasets)
-        if "plotSetId" in plot_set
+
+
+def build_browser_preview_payload_for_root(
+    active_root: Path | None,
+    *,
+    launch_root: Path,
+    include_artifacts: bool,
+    image_library: bool,
+    settings: UserSettings | None = None,
+    root_error: str | None = None,
+    show_root_chooser: bool = False,
+) -> dict[str, object]:
+    from mplgallery.core.associations import build_plot_records
+    from mplgallery.core.scanner import scan_project
+    from mplgallery.core.studio import _is_reference_artifact_path
+    from mplgallery.ui.component import build_component_payload
+
+    launch_root = launch_root.expanduser().resolve()
+    settings = settings or load_user_settings()
+    if active_root is None:
+        return build_component_payload(
+            project_root=launch_root,
+            active_root=None,
+            records=[],
+            datasets=[],
+            browse_mode="image-library" if image_library else "plot-set-manager",
+            selected_plot_id=None,
+            errors={},
+            launch_root=launch_root,
+            recent_roots=settings.recent_roots if settings.remember_recent_projects else (),
+            root_error=root_error,
+            show_root_chooser=show_root_chooser,
+            hydrated_plot_set_ids=set(),
+            app_info=_desktop_update_payload(),
+            user_settings=settings,
+        )
+
+    active_root = active_root.expanduser().resolve()
+    scan = scan_project(active_root, read_image_metadata=False)
+    records = [
+        record
+        for record in build_plot_records(scan, manifest=None)
+        if _is_reference_artifact_path(record.image.relative_path)
+    ]
+    browse_mode = "image-library" if image_library else "plot-set-manager"
+    image_src_by_plot_id = {
+        record.plot_id: (
+            f"/__mplgallery__/asset?root={quote(str(active_root), safe='')}"
+            f"&path={quote(record.image.relative_path.as_posix(), safe='')}"
+        )
+        for record in records
     }
     return build_component_payload(
-        project_root=project_root,
-        active_root=project_root,
-        records=index.records,
-        datasets=index.datasets,
-        browse_mode=index.browse_mode,
+        project_root=active_root,
+        active_root=active_root,
+        records=records,
+        datasets=[],
+        browse_mode=browse_mode,
         selected_plot_id=None,
         errors={},
-        launch_root=project_root,
+        launch_root=launch_root,
         recent_roots=settings.recent_roots if settings.remember_recent_projects else (),
-        root_error=None,
-        show_root_chooser=False,
-        hydrated_plot_set_ids=hydrated_plot_set_ids,
+        root_error=root_error,
+        show_root_chooser=show_root_chooser,
+        hydrated_plot_set_ids=set(),
+        image_src_by_plot_id=image_src_by_plot_id,
         app_info=_desktop_update_payload(),
         user_settings=settings,
     )
 
 
-def _start_browser_preview_server(preview_root: Path, preview_name: str) -> str:
+def _start_browser_preview_server(
+    preview_root: Path,
+    preview_name: str,
+    *,
+    project_root: Path,
+    include_artifacts: bool,
+    image_library: bool,
+) -> str:
     port = _find_open_port(preferred=51226)
     command = [
         sys.executable,
@@ -261,7 +321,13 @@ def _start_browser_preview_server(preview_root: Path, preview_name: str) -> str:
         "127.0.0.1",
         "--port",
         str(port),
+        "--project-root",
+        str(project_root),
     ]
+    if include_artifacts:
+        command.append("--include-artifacts")
+    if image_library:
+        command.append("--image-library")
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     subprocess.Popen(
         command,
@@ -277,7 +343,7 @@ def _start_browser_preview_server(preview_root: Path, preview_name: str) -> str:
 def _find_open_port(*, preferred: int | None = None) -> int:
     if preferred is not None:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            _prefer_exclusive_socket(sock)
             try:
                 sock.bind(("127.0.0.1", preferred))
             except OSError:
@@ -285,8 +351,19 @@ def _find_open_port(*, preferred: int | None = None) -> int:
             else:
                 return preferred
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        _prefer_exclusive_socket(sock)
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+def _prefer_exclusive_socket(sock: socket.socket) -> None:
+    exclusive_addr_use = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+    if exclusive_addr_use is None:
+        return
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, exclusive_addr_use, 1)
+    except OSError:
+        return
 
 
 def _wait_for_local_server(host: str, port: int, *, timeout_seconds: float = 5.0) -> None:

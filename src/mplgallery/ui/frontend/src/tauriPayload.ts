@@ -199,7 +199,7 @@ export function tauriToBrowserPayload(
     },
     userSettings: bootstrap.userSettings,
     rootContext: {
-      activeRoot: bootstrap.rootContext.activeRoot,
+      activeRoot: scan.rootPath,
       launchRoot: bootstrap.rootContext.activeRoot,
       recentRoots: bootstrap.rootContext.recentRoots,
       error: bootstrap.rootContext.error ?? null,

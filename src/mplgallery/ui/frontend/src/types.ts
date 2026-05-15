@@ -222,7 +222,7 @@ export type ComponentEvent =
   | { id: string; type: "select_plot_set"; plot_set_id: string }
   | { id: string; type: "set_preferred_attachment_view"; plot_set_id: string; attachment_id: string }
   | { id: string; type: "toggle_show_ungrouped"; show: boolean }
-  | { id: string; type: "refresh_index" }
+  | { id: string; type: "refresh_index"; root_path?: string }
   | { id: string; type: "browse_project_root" }
   | { id: string; type: "change_project_root"; root_path: string }
   | { id: string; type: "reset_project_root" }

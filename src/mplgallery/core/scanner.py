@@ -33,7 +33,7 @@ DEFAULT_IGNORE_DIRS = {
 }
 
 
-def scan_project(project_root: Path | str) -> ScanResult:
+def scan_project(project_root: Path | str, *, read_image_metadata: bool = True) -> ScanResult:
     root = Path(project_root).expanduser().resolve()
     if not root.exists():
         raise FileNotFoundError(f"Project root does not exist: {root}")
@@ -57,7 +57,7 @@ def scan_project(project_root: Path | str) -> ScanResult:
             if not child.is_file() or child.suffix.lower() not in SUPPORTED_SUFFIXES:
                 continue
 
-            files.append(_discover_file(child, root))
+            files.append(_discover_file(child, root, read_image_metadata=read_image_metadata))
 
     files.sort(key=lambda file: file.relative_path.as_posix().lower())
     return ScanResult(project_root=root, files=files, ignored_dir_count=ignored_dir_count)
@@ -74,10 +74,14 @@ def _should_ignore_dir(path: Path, root: Path) -> bool:
     return name.startswith(".") and name != ".mplgallery"
 
 
-def _discover_file(path: Path, root: Path) -> DiscoveredFile:
+def _discover_file(path: Path, root: Path, *, read_image_metadata: bool = True) -> DiscoveredFile:
     stat = path.stat()
     suffix = path.suffix.lower()
-    width_px, height_px, image_format = _read_image_metadata(path, suffix)
+    width_px, height_px, image_format = (
+        _read_image_metadata(path, suffix)
+        if read_image_metadata
+        else (None, None, suffix.removeprefix(".").upper() if suffix in {".png", ".svg"} else None)
+    )
     return DiscoveredFile(
         path=path.resolve(),
         relative_path=path.relative_to(root),
