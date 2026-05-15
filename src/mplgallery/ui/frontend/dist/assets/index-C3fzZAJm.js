@@ -1,1 +1,0 @@
-import{R as t,j as e,A as r,d as a,T as i}from"./TauriPreviewApp-CnnOYyjw.js";const n={emitEvent:()=>{},openExternal:s=>window.open(s,"_blank","noopener,noreferrer"),capabilities:{...a,supportsBrowseDialog:!1,supportsRootReset:!1}},o=window.__MPLGALLERY_BROWSER_PAYLOAD__;t.createRoot(document.getElementById("root")).render(o?e.jsx(r,{payload:o,host:n}):e.jsx(i,{}));

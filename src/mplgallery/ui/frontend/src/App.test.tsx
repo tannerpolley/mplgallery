@@ -373,16 +373,34 @@ describe("App explorer", () => {
     fireEvent.change(screen.getByLabelText("Custom set name"), { target: { value: "My set" } });
     fireEvent.click(screen.getByRole("button", { name: "Save set" }));
 
-    expect(screen.getByRole("button", { name: /My set/ })).toBeInTheDocument();
+    expect(screen.getByText("My set").closest('[role="button"]')).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Clear gallery" }));
     expect(screen.getByLabelText("Show alpha.csv")).not.toBeChecked();
 
-    fireEvent.click(screen.getByRole("button", { name: /My set/ }));
+    fireEvent.click(screen.getByText("My set").closest('[role="button"]') as HTMLElement);
     expect(screen.getByLabelText("Show alpha.csv")).toBeChecked();
 
     cleanup();
     renderApp(payload());
-    expect(screen.getByRole("button", { name: /My set/ })).toBeInTheDocument();
+    expect(screen.getByText("My set").closest('[role="button"]')).not.toBeNull();
+  });
+
+  it("removes remembered custom sets", () => {
+    renderApp(payload());
+
+    fireEvent.click(screen.getByLabelText("Show alpha.csv"));
+    fireEvent.click(screen.getByRole("button", { name: "Create set" }));
+    fireEvent.change(screen.getByLabelText("Custom set name"), { target: { value: "Throwaway set" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save set" }));
+
+    expect(screen.getByText("Throwaway set").closest('[role="button"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Remove custom set Throwaway set" }));
+    expect(screen.queryByText("Throwaway set")).not.toBeInTheDocument();
+    expect(screen.getByText("No custom sets yet.")).toBeInTheDocument();
+
+    cleanup();
+    renderApp(payload());
+    expect(screen.queryByText("Throwaway set")).not.toBeInTheDocument();
   });
 
   it("surfaces update installer failures in status", () => {

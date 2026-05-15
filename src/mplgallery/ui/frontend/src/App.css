@@ -515,6 +515,33 @@ summary:focus-visible {
   font-weight: 700;
 }
 
+.mg-custom-set-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.mg-custom-set-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--mg-line-strong);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--mg-muted);
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.mg-custom-set-remove:hover {
+  border-color: var(--mg-bad);
+  color: var(--mg-bad);
+}
+
 .mg-folder-row.is-custom-set-root {
   margin-top: 8px;
   border-top: 1px solid var(--mg-line);

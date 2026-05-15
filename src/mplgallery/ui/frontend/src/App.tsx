@@ -571,6 +571,10 @@ function App(props: StreamlitProps) {
     if (nextIds[0]) focusPlotSet(nextIds[0]);
   }
 
+  function removeCustomSet(customSetId: string) {
+    setCustomSets((current) => current.filter((customSet) => customSet.id !== customSetId));
+  }
+
   function reorderDraggingPlotSet(draggedPlotSetId: string, targetPlotSetId: string) {
     if (
       checkedPlotSetIds.has(draggedPlotSetId)
@@ -1080,6 +1084,7 @@ function App(props: StreamlitProps) {
               onToggleCollapsed={toggleFoldersCollapsed}
               onSelectFolder={selectFolder}
               onApplyCustomSet={applyCustomSet}
+              onRemoveCustomSet={removeCustomSet}
             />
             <div
               className="mg-pane-resizer"
@@ -1540,6 +1545,7 @@ function FoldersPane({
   onToggleCollapsed,
   onSelectFolder,
   onApplyCustomSet,
+  onRemoveCustomSet,
 }: {
   nodes: FolderViewNode[];
   selectedFolder: string;
@@ -1549,6 +1555,7 @@ function FoldersPane({
   onToggleCollapsed: () => void;
   onSelectFolder: (path: string) => void;
   onApplyCustomSet: (customSet: CustomSet) => void;
+  onRemoveCustomSet: (customSetId: string) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const childNodes = useMemo(() => {
@@ -1670,15 +1677,36 @@ function FoldersPane({
                 customSet.plotSetIds.length > 0
                 && customSet.plotSetIds.every((plotSetId) => checkedPlotSetIds.has(plotSetId));
               return (
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   key={customSet.id}
                   className={`mg-custom-set-row ${allSelected ? "is-selected" : ""}`}
                   onClick={() => onApplyCustomSet(customSet)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onApplyCustomSet(customSet);
+                    }
+                  }}
                 >
                   <span className="mg-custom-set-name">{customSet.name}</span>
-                  <span className="mg-count">{customSet.plotSetIds.length}</span>
-                </button>
+                  <span className="mg-custom-set-actions">
+                    <span className="mg-count">{customSet.plotSetIds.length}</span>
+                    <button
+                      type="button"
+                      className="mg-custom-set-remove"
+                      aria-label={`Remove custom set ${customSet.name}`}
+                      title={`Remove ${customSet.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRemoveCustomSet(customSet.id);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                </div>
               );
             })
           ) : (
